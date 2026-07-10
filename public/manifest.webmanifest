@@ -1,0 +1,12 @@
+{
+  "name": "EinsatzplanGenerator",
+  "short_name": "Einsatzplan",
+  "description": "Wöchentliche Personaleinsatzpläne (PEP) pro Filiale erstellen",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#1f6f43",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
