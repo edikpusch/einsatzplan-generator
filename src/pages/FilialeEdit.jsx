@@ -218,10 +218,14 @@ export default function FilialeEdit() {
             <span className="pfeil">›</span>
           </Link>
         ))}
-        <button className="btn voll" style={{ marginTop: 10 }}
-          onClick={() => navigate(`/filiale/${filiale.id}/ma/neu`)}>
-          + Mitarbeiter
-        </button>
+        <div className="fab-zeile" style={{ marginBottom: 0 }}>
+          <button className="btn" onClick={() => navigate(`/filiale/${filiale.id}/ma/neu`)}>
+            + Mitarbeiter
+          </button>
+          <button className="btn zweit" onClick={() => navigate(`/filiale/${filiale.id}/scan`)}>
+            📷 Mitarbeiter scannen
+          </button>
+        </div>
       </div>
 
       <button className="btn gefahr voll" onClick={loeschen}>Filiale löschen</button>

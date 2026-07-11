@@ -30,6 +30,8 @@ src/
                           Kassen-Peaks, Schichtvorlagen, MA-Liste (Auto-Save)
     MitarbeiterEdit.jsx ← MA: Funktion, fest/GfB, Quali-Häkchen, Verfügbarkeit,
                           Azubi + Berufsschultage (Speichern-Button)
+    OcrScan.jsx         ← OCR-Mitarbeiterimport: Personalbericht scannen
+                          (2 Bilder), Review Neu/Geändert/Fehlt, Merge
     WocheStart.jsx      ← KW + Jahr + Filiale wählen → Mo–Sa berechnet
     PlanEditor.jsx      ← KERN: Matrix MA × Mo–Sa, Bottom-Sheet pro Zelle,
                           Tabs Plan/Abwesend/Sondertage/Prüfung, Budget-Leiste,
@@ -38,6 +40,8 @@ src/
     Kopf.jsx            ← Seitenkopf mit Zurück-Link
     TageChips.jsx       ← Mo–Sa Mehrfachauswahl
   utils/
+    ocr.js              ← Tesseract.js-Pipeline, Y-Matching, Kürzel-Mapping,
+                          Stunden-Parsing, Merge-Vergleich (baueVergleich)
     zeit.js             ← Minuten-Arithmetik, HH:MM, ISO-KW, Pausen-Automatik
     gfb.js              ← Zuschlagsbänder, GfB-Verdienst, Monats-Aggregation
     pruefung.js         ← Prüf-Layer (alle Warnungen)
@@ -99,6 +103,25 @@ Volle Spezifikation inkl. Phase B: [docs/PROMPT-PhaseA.md](docs/PROMPT-PhaseA.md
 - Teilen: Web Share API (WhatsApp), Fallback Download.
 - **Auf iPad beim ersten Export prüfen:** Spaltenbreiten/Merges, HH:MM,
   Dezimal-Komma, Aushilfe-Block.
+
+### OCR-Mitarbeiterimport (utils/ocr.js + pages/OcrScan.jsx)
+- Portiert aus MehrstundenManager OcrScan.jsx (Vorverarbeitung, Worker-Config,
+  Zeilengruppierung, Funktions-Aliases 1:1 übernommen). Tesseract.js, offline.
+- Gescannt wird der PERSONALBERICHT (nicht der PEP): Bild 1 = Namensspalte,
+  Bild 2 = Tätigkeit + Wo-Std. Beide im gleichen Ausschnitt aufnehmen!
+- Zuordnung per **Y-Positions-Matching** (yNorm 0–1, |Δy| < 0.03), NICHT per
+  Index – Index bricht bei mehrzeiligen Namen. Umgebrochene Namen werden zu
+  einem MA zusammengeführt (Durchschnitts-Y).
+- **KRITISCH – ID-Stabilität:** `ep_wochen[*].plan` referenziert maId. Rescan
+  merged per matchKey (nachname+vorname, lowercase, ä→a/ß→ss, nur a–z) und
+  behält IDs. Nur funktion/vertragsstunden/typ/azubi werden aktualisiert –
+  stundenlohn, verdienstgrenze, quali, verfuegbarkeit, berufsschultage NIE
+  überschreiben. Fehlende MA werden nie automatisch gelöscht.
+- Review-Screen ist Pflicht: erst „Übernehmen" schreibt nach localStorage.
+- Stunden-Parsing: "37:30"→37.5, "37,5", OCR-Artefakt "300"→30.0; Ziffern-
+  korrektur (B→8, O→0 …) nur für Stunden, nie für Funktions-Kürzel.
+- Kürzel-Mapping zentral in `KUERZEL_ZU_FUNKTION` (ML/MLV/MLV2/VK/AZUBI/GfB/RK),
+  unbekannte Kürzel → Funktion leer + rot im Review.
 
 ### Prüf-Layer (utils/pruefung.js)
 - Warnungen sind Hinweise, keine Sperre. schwere: 'rot' | 'gelb'.
