@@ -1,10 +1,14 @@
 // localStorage-Zugriff, Prefix ep_ – kein Backend, alles auf dem Gerät.
 import { ALLE_TAGE, TAGE } from './utils/zeit'
+import {
+  STANDARD_KATALOG, defaultLieferprofil, defaultPalettenFaktoren,
+} from './utils/katalog'
 
 const KEY_PROFILE = 'ep_profile'
 const KEY_FILIALEN = 'ep_filialen'
 const KEY_MITARBEITER = 'ep_mitarbeiter'
 const KEY_WOCHEN = 'ep_wochen'
+const KEY_KATALOG = 'ep_vorgangskatalog'
 
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
@@ -72,11 +76,26 @@ export function defaultFiliale() {
       { id: uid(), name: 'Früh', von: '06:00', bis: '14:30', pauseMin: 30 },
       { id: uid(), name: 'Spät', von: '14:15', bis: '22:15', pauseMin: 30 },
     ],
+    lieferprofil: defaultLieferprofil(),
+    palettenFaktoren: defaultPalettenFaktoren(),
+    bestellzeiten: [],
+    vorgangOverrides: {},
+  }
+}
+
+// Migration: ältere Filialen um Bedarfsmodul-Felder ergänzen (lazy)
+function mitFilialDefaults(f) {
+  return {
+    lieferprofil: defaultLieferprofil(),
+    palettenFaktoren: defaultPalettenFaktoren(),
+    bestellzeiten: [],
+    vorgangOverrides: {},
+    ...f,
   }
 }
 
 export function getFilialen() {
-  return lade(KEY_FILIALEN, [])
+  return lade(KEY_FILIALEN, []).map(mitFilialDefaults)
 }
 
 export function getFiliale(id) {
@@ -184,4 +203,28 @@ export function deleteWoche(key) {
   const alle = getAlleWochen()
   delete alle[key]
   speichere(KEY_WOCHEN, alle)
+}
+
+// ---------- Vorgangskatalog (Bedarfsmodul) ----------
+
+// Global; beim ersten Zugriff mit dem Standard-Katalog befüllt. Neue
+// Standard-Vorgänge (App-Update) werden bestehenden Katalogen angehängt.
+export function getKatalog() {
+  const gespeichert = lade(KEY_KATALOG, null)
+  if (!gespeichert) {
+    speichere(KEY_KATALOG, STANDARD_KATALOG)
+    return STANDARD_KATALOG
+  }
+  const vorhanden = new Set(gespeichert.map(v => v.id))
+  const fehlend = STANDARD_KATALOG.filter(v => !vorhanden.has(v.id))
+  if (fehlend.length > 0) {
+    const erweitert = [...gespeichert, ...fehlend]
+    speichere(KEY_KATALOG, erweitert)
+    return erweitert
+  }
+  return gespeichert
+}
+
+export function saveKatalog(katalog) {
+  speichere(KEY_KATALOG, katalog)
 }

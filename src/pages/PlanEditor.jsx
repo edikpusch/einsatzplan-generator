@@ -3,8 +3,10 @@ import { useParams } from 'react-router-dom'
 import Kopf from '../components/Kopf'
 import {
   getFiliale, getProfile, getMitarbeiter, getWoche, saveWoche, getAlleWochen,
-  wocheKey, istAushilfe, FUNKTIONEN,
+  wocheKey, istAushilfe, FUNKTIONEN, getKatalog,
 } from '../store'
+import BedarfTab from '../components/BedarfTab'
+import { lieferungenVorbelegen, faelligeInventuren } from '../utils/bedarf'
 import {
   TAGE, TAG_KURZ, TAG_NAMEN, STATUS_CODES, STATUS_LABELS,
   toMin, autoPause, berechneStdMin, dauerHHMM, dezimalZuHHMM, euroFormat,
@@ -167,9 +169,15 @@ export default function PlanEditor() {
   const filiale = useMemo(() => getFiliale(filialeId), [filialeId])
   const profile = useMemo(() => getProfile(), [])
   const mitarbeiter = useMemo(() => sortiere(getMitarbeiter(filialeId)), [filialeId])
+  const katalog = useMemo(() => getKatalog(), [])
 
-  const [woche, setWoche] = useState(() =>
-    getWoche(filialeId, jahr, kw) || neueWoche(filialeId, jahr, kw))
+  const [woche, setWoche] = useState(() => {
+    const w = getWoche(filialeId, jahr, kw) || neueWoche(filialeId, jahr, kw)
+    // Bedarfsmodul-Migration: Lieferungen + fällige Inventuren vorbelegen
+    if (!w.lieferungen) w.lieferungen = filiale ? lieferungenVorbelegen(filiale) : []
+    if (!w.inventurenDiesenMonat) w.inventurenDiesenMonat = faelligeInventuren(jahr, kw, getKatalog())
+    return w
+  })
   const [tab, setTab] = useState('plan')
   const [auswahl, setAuswahl] = useState(null) // { maId, tag }
   const [exportiert, setExportiert] = useState(false)
@@ -185,8 +193,8 @@ export default function PlanEditor() {
   }), [woche, filialeId, jahr, kw])
 
   const warnungen = useMemo(() =>
-    pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen }),
-    [woche, filiale, mitarbeiter, profile, alleWochen])
+    pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen, katalog }),
+    [woche, filiale, mitarbeiter, profile, alleWochen, katalog])
 
   const monate = useMemo(() => wochenMonate(jahr, kw), [jahr, kw])
 
@@ -240,11 +248,15 @@ export default function PlanEditor() {
   // Summen
   let gesamtMin = 0
   const wochenSummen = {}
+  const geplantProTag = Object.fromEntries(TAGE.map(t => [t, 0]))
   for (const ma of mitarbeiter) {
     let min = 0
     for (const tag of TAGE) {
       const z = woche.plan?.[ma.id]?.[tag]
-      if (z?.art === 'arbeit') min += z.stdMin || 0
+      if (z?.art === 'arbeit') {
+        min += z.stdMin || 0
+        geplantProTag[tag] += z.stdMin || 0
+      }
     }
     wochenSummen[ma.id] = min
     gesamtMin += min
@@ -278,6 +290,7 @@ export default function PlanEditor() {
 
       <div className="tabs">
         <button className={tab === 'plan' ? 'aktiv' : ''} onClick={() => setTab('plan')}>Plan</button>
+        <button className={tab === 'bedarf' ? 'aktiv' : ''} onClick={() => setTab('bedarf')}>Bedarf</button>
         <button className={tab === 'abwesend' ? 'aktiv' : ''} onClick={() => setTab('abwesend')}>Abwesend</button>
         <button className={tab === 'sondertage' ? 'aktiv' : ''} onClick={() => setTab('sondertage')}>
           Sondertage{woche.sondertage.length > 0 && <span className="zahl">{woche.sondertage.length}</span>}
@@ -366,6 +379,16 @@ export default function PlanEditor() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {tab === 'bedarf' && (
+        <BedarfTab
+          woche={woche}
+          setWoche={setWoche}
+          filiale={filiale}
+          katalog={katalog}
+          geplantProTag={geplantProTag}
+        />
       )}
 
       {tab === 'abwesend' && mitarbeiter.length > 0 && (

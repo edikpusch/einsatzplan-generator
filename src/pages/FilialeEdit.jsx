@@ -6,6 +6,7 @@ import {
   getFiliale, saveFiliale, deleteFiliale, getMitarbeiter, uid, istAushilfe,
 } from '../store'
 import { ALLE_TAGE, TAG_NAMEN, dezimalZuHHMM } from '../utils/zeit'
+import { LIEFERARTEN, LIEFERART_LABELS } from '../utils/katalog'
 
 export default function FilialeEdit() {
   const { id } = useParams()
@@ -164,6 +165,79 @@ export default function FilialeEdit() {
           onClick={() => update({ kassenPeaks: [...(filiale.kassenPeaks || []), { tage: ['mo', 'di', 'mi', 'do', 'fr', 'sa'], von: '11:00', bis: '14:00', anzahl: 2 }] })}>
           + Peak-Fenster
         </button>
+      </div>
+
+      <div className="karte">
+        <h2>Lieferprofil (Bedarfsmodul)</h2>
+        <p className="hinweis">Typische Liefertage + Paletten – Vorbelegung für die Wochenplanung, dort pro Woche anpassbar.</p>
+        {LIEFERARTEN.map(art => {
+          const p = filiale.lieferprofil?.[art] || { tage: [], typischePaletten: 0, zeitpunkt: 'frueh' }
+          return (
+            <div key={art} style={{ borderTop: '1px solid var(--grau-linie)', padding: '10px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <b style={{ flex: '0 0 70px', fontSize: 14 }}>{LIEFERART_LABELS[art]}</b>
+                <TageChips auswahl={p.tage || []}
+                  onChange={tage => update({ lieferprofil: { ...filiale.lieferprofil, [art]: { ...p, tage } } })} />
+              </div>
+              <div className="zeile">
+                <label className="feld" style={{ maxWidth: 140 }}>
+                  <span>Typische Paletten</span>
+                  <input type="number" min="0" inputMode="numeric" value={p.typischePaletten ?? 0}
+                    onChange={e => update({ lieferprofil: { ...filiale.lieferprofil, [art]: { ...p, typischePaletten: parseInt(e.target.value) || 0 } } })} />
+                </label>
+                <label className="feld" style={{ maxWidth: 150 }}>
+                  <span>Zeitpunkt</span>
+                  <select value={p.zeitpunkt || 'frueh'}
+                    onChange={e => update({ lieferprofil: { ...filiale.lieferprofil, [art]: { ...p, zeitpunkt: e.target.value } } })}>
+                    <option value="frueh">früh</option>
+                    <option value="vorabend">Vorabend</option>
+                    <option value="nachts">nachts</option>
+                  </select>
+                </label>
+                <label className="feld" style={{ maxWidth: 170 }}>
+                  <span>Verräumzeit/Palette (min)</span>
+                  <input type="number" min="0" inputMode="numeric"
+                    value={filiale.palettenFaktoren?.[art] ?? 45}
+                    onChange={e => update({ palettenFaktoren: { ...filiale.palettenFaktoren, [art]: parseInt(e.target.value) || 0 } })} />
+                </label>
+              </div>
+            </div>
+          )
+        })}
+        <div style={{ borderTop: '1px solid var(--grau-linie)', padding: '10px 0' }}>
+          <div className="hinweis" style={{ marginBottom: 4 }}>Fleisch kommt täglich AUSSER an:</div>
+          <TageChips auswahl={filiale.lieferprofil?.fleischAusnahmen || []}
+            onChange={fleischAusnahmen => update({ lieferprofil: { ...filiale.lieferprofil, fleischAusnahmen } })} />
+        </div>
+
+        <h3>Bestell-Deadlines (Anzeige im Tagesplan)</h3>
+        {(filiale.bestellzeiten || []).map((b, idx) => (
+          <div key={idx} className="zeile" style={{ marginBottom: 4, alignItems: 'flex-end' }}>
+            <label className="feld">
+              <span>Warengruppe</span>
+              <input type="text" value={b.name}
+                onChange={e => update({ bestellzeiten: filiale.bestellzeiten.map((x, i) => i === idx ? { ...x, name: e.target.value } : x) })} />
+            </label>
+            <label className="feld" style={{ maxWidth: 120 }}>
+              <span>Deadline</span>
+              <input type="time" value={b.deadline}
+                onChange={e => update({ bestellzeiten: filiale.bestellzeiten.map((x, i) => i === idx ? { ...x, deadline: e.target.value } : x) })} />
+            </label>
+            <button className="btn klein gefahr" style={{ marginBottom: 12 }}
+              onClick={() => update({ bestellzeiten: filiale.bestellzeiten.filter((_, i) => i !== idx) })}>
+              ✕
+            </button>
+          </div>
+        ))}
+        <div className="fab-zeile" style={{ margin: '8px 0 0' }}>
+          <button className="btn zweit"
+            onClick={() => update({ bestellzeiten: [...(filiale.bestellzeiten || []), { name: 'Obst & Gemüse', deadline: '10:00' }] })}>
+            + Deadline
+          </button>
+          <button className="btn zweit" onClick={() => navigate(`/filiale/${filiale.id}/katalog`)}>
+            🧮 Vorgangskatalog
+          </button>
+        </div>
       </div>
 
       <div className="karte">

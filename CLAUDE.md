@@ -34,14 +34,22 @@ src/
                           (2 Bilder), Review Neu/Geändert/Fehlt, Merge
     WocheStart.jsx      ← KW + Jahr + Filiale wählen → Mo–Sa berechnet
     PlanEditor.jsx      ← KERN: Matrix MA × Mo–Sa, Bottom-Sheet pro Zelle,
-                          Tabs Plan/Abwesend/Sondertage/Prüfung, Budget-Leiste,
-                          Export (Auto-Save bei jeder Änderung)
+                          Tabs Plan/Bedarf/Abwesend/Sondertage/Prüfung,
+                          Budget-Leiste, Export (Auto-Save bei jeder Änderung)
+    KatalogEdit.jsx     ← Vorgangskatalog-Verwaltung (pro Filiale Overrides,
+                          eigene Vorgänge global)
   components/
     Kopf.jsx            ← Seitenkopf mit Zurück-Link
     TageChips.jsx       ← Mo–Sa Mehrfachauswahl
+    BedarfTab.jsx       ← Bedarf-Tab: Ampel, Tages-Balken, Lieferungen,
+                          Inventuren/Saison, Tagesansicht für den ML
   utils/
     ocr.js              ← Tesseract.js-Pipeline, Y-Matching, Kürzel-Mapping,
                           Stunden-Parsing, Merge-Vergleich (baueVergleich)
+    katalog.js          ← Standard-Vorgangskatalog (29 Vorgänge), Labels,
+                          effektiverKatalog (Override-Merge), Lieferprofil-Defaults
+    bedarf.js           ← Bedarfsrechnung: tagesBedarf/wochenBedarf, Ampel,
+                          Lieferungen-Vorbelegung, fällige Inventuren
     zeit.js             ← Minuten-Arithmetik, HH:MM, ISO-KW, Pausen-Automatik
     gfb.js              ← Zuschlagsbänder, GfB-Verdienst, Monats-Aggregation
     pruefung.js         ← Prüf-Layer (alle Warnungen)
@@ -65,6 +73,15 @@ src/
   plan{maId→tag→Zelle} }
 - Zelle: `{ art:'arbeit', von, bis, pauseMin, stdMin, vertreter }` oder
   `{ art:'status', code }` (U/F/K/FT/BV/Kur/SCH)
+- `ep_vorgangskatalog` – global (Standard-Katalog beim ersten Zugriff geseedet,
+  neue Standard-Vorgänge werden bei App-Updates angehängt); pro Filiale
+  überschreibbar via `ep_filialen[].vorgangOverrides` (Key = vorgangId).
+  Vorgang: { id, name, kategorie, rhythmus, wochentage[], personen{min,max},
+  dauerMin{min,max}, zeitanker, rolle, budgetQuelle filiale|extern, aktiv }
+- Wochen-Erweiterung: `lieferungen[{tag,art,paletten}]` (vorbelegt aus
+  `filiale.lieferprofil`), `inventurenDiesenMonat[{vorgangId,tag}]`
+- Filial-Erweiterung: `lieferprofil`, `palettenFaktoren`, `bestellzeiten`,
+  `vorgangOverrides` (Migration lazy in `mitFilialDefaults`)
 
 Volle Spezifikation inkl. Phase B: [docs/PROMPT-PhaseA.md](docs/PROMPT-PhaseA.md)
 
@@ -128,6 +145,26 @@ Volle Spezifikation inkl. Phase B: [docs/PROMPT-PhaseA.md](docs/PROMPT-PhaseA.md
 - Abdeckungs-Checks laufen über Intervall-Sweep (`unterdeckung`).
 - Sondertag-Check ist eine Heuristik (Kopfzahl vs. Maximum anderer Tage).
 - Feiertage: Phase-A-Annahme = Filiale geschlossen, kein Feiertagszuschlag.
+- Bedarfs-Checks (typ 'bedarf') nur wenn `katalog` übergeben wird: Lieferung-
+  Unterdeckung (nur bei geplant > 0, sonst Doppel-Rauschen zum leeren Plan),
+  Abend-Vorgänge (Personen nach 19:00), Pflicht-Rollen (erfuelltRolle:
+  baecker/kasse/schluesseltraeger-Quali, ml=Funktion enthält
+  „Filialverantwortlicher", reinigung=Funktion Reinigungskraft).
+
+### Bedarfsmodul (utils/katalog.js + utils/bedarf.js + BedarfTab)
+- KALKULATION, kein Task-Management – nichts wird „abgehakt".
+- Personenstunden = personen × dauerMin (Min/Max-Spannen mitführen).
+- Lieferung = 30 min Annahme + Paletten × palettenFaktor[art].
+- Kassen-Dauerbesetzung = kassenStandard × Öffnungszeit + Peak-Differenzen –
+  bewusst Teil des Tagesbedarfs (Gesamtbesetzungs-Baseline lt. Spec).
+- `budgetQuelle:'extern'` wird angezeigt, zählt aber NIE gegen das Budget.
+- Wöchentliche Vorgänge ohne feste Tage → `flexPosten` (nur Wochensumme,
+  keinem Tag zugeordnet).
+- Inventur-Fälligkeit (Heuristik): Woche enthält 1. Ziel-Wochentag des Monats;
+  alle2monate = gerade Monatsindizes (Jan/Mär/…), alle4monate = Jan/Mai/Sep.
+  Nutzer bestätigt im Bedarf-Tab (`inventurenDiesenMonat`), Woche speichert.
+- Ampel: Mittelwert der Spanne vs. Budget (rot >100 %, gelb <5 % Luft).
+- Balken-Farben validiert (CVD-safe): Bedarf #4272b8, Geplant var(--gruen).
 
 ### Phase B (NICHT gebaut, Datenmodell ist vorbereitet)
 Auto-Vorschlags-Engine (greedy + Prüf-Layer), schreibt in denselben `plan`.

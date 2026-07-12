@@ -325,6 +325,65 @@ table.abwesend .ma-spalte { text-align: left; font-weight: 600; font-size: 13px;
 
 .leer-hinweis { text-align: center; color: var(--text-schwach); padding: 24px 12px; font-size: 14px; }
 
+/* Bedarf-Tab: Balken pro Tag (Bedarf vs. geplant vs. Budget-Anteil) */
+.bedarf-legende {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-schwach);
+  margin-bottom: 10px;
+}
+.bedarf-legende i {
+  display: inline-block;
+  width: 12px;
+  height: 8px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: baseline;
+}
+.bedarf-legende i.strich {
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--text);
+  vertical-align: middle;
+}
+.bedarf-zeile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--grau-linie);
+  cursor: pointer;
+}
+.bedarf-tag { flex: 0 0 28px; font-weight: 700; font-size: 13px; }
+.bedarf-balken { flex: 1; position: relative; min-width: 0; }
+.bedarf-marker {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--text);
+  opacity: 0.55;
+  z-index: 2;
+}
+.balkenreihe {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+.balkenreihe .balken {
+  height: 8px;
+  border-radius: 0 4px 4px 0;
+  min-width: 2px;
+  flex-shrink: 0;
+}
+.balkenreihe .balken.bedarf { background: #4272b8; }
+.balkenreihe .balken.geplant { background: var(--gruen); }
+.balken-wert { font-size: 11px; color: var(--text-schwach); white-space: nowrap; }
+
 .fab-zeile { display: flex; gap: 10px; margin: 14px 0; }
 .fab-zeile .btn { flex: 1; }
 

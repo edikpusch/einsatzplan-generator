@@ -5,6 +5,20 @@ import {
 } from './zeit'
 import { gfbMonatsWerte, wochenMonate } from './gfb'
 import { monatName } from './zeit'
+import { tagesBedarf, stdText } from './bedarf'
+import { ROLLE_LABELS } from './katalog'
+
+// Erfüllt dieser MA die Pflicht-Rolle eines Vorgangs?
+function erfuelltRolle(ma, rolle) {
+  switch (rolle) {
+    case 'baecker': return !!ma.quali?.baecker
+    case 'kassierer': return !!ma.quali?.kasse
+    case 'schluesseltraeger': return !!ma.quali?.schluesseltraeger
+    case 'ml': return (ma.funktion || '').includes('Filialverantwortlicher')
+    case 'reinigung': return ma.funktion === 'Reinigungskraft Lebensmittel'
+    default: return true
+  }
+}
 
 // Zeiträume innerhalb [start, end], in denen weniger als `bedarf` der
 // Intervalle gleichzeitig aktiv sind. Rückgabe: [{ von, bis }] (Minuten).
@@ -41,7 +55,7 @@ function maName(ma) {
   return (ma.vorname + ' ' + ma.name).trim() || 'MA'
 }
 
-export function pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen }) {
+export function pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen, katalog }) {
   const warnungen = []
   if (!woche || !filiale) return warnungen
   const plan = woche.plan || {}
@@ -273,6 +287,50 @@ export function pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen }
         typ: 'sondertag', schwere: 'gelb', tag: st.tag,
         text: `${TAG_NAMEN[st.tag]} (${st.typ}): ${koepfe} Köpfe geplant, Zusatzbedarf +${zusatz} evtl. nicht gedeckt`,
       })
+    }
+  }
+
+  // 11. Bedarfsmodul-Abgleich (nur wenn Katalog übergeben wurde)
+  if (katalog) {
+    for (const tag of TAGE) {
+      const arbeiten = arbeitProTag[tag]
+      const bedarf = tagesBedarf({ tag, filiale, katalog, woche })
+      const geplantMin = arbeiten.reduce((s, a) => s + (a.zelle.stdMin || 0), 0)
+      const hatLieferung = (woche.lieferungen || []).some(l => l.tag === tag)
+
+      // Lieferung, aber geplante Personenstunden < Tagesbedarf (Untergrenze)
+      if (hatLieferung && geplantMin > 0 && geplantMin < bedarf.minMin) {
+        warnungen.push({
+          typ: 'bedarf', schwere: 'gelb', tag,
+          text: `${TAG_NAMEN[tag]}: Lieferung, aber Unterdeckung ca. ${stdText(bedarf.minMin - geplantMin)} (Bedarf ≥ ${stdText(bedarf.minMin)}, geplant ${stdText(geplantMin)})`,
+        })
+      }
+
+      for (const posten of bedarf.posten) {
+        if (posten.quelle !== 'vorgang') continue
+
+        // Abend-Vorgang (z.B. Wochenwerbung Sa): genug Leute nach 18 Uhr?
+        if (posten.zeitanker === 'abend' && posten.personen && arbeiten.length > 0) {
+          const abends = arbeiten.filter(a => a.bis > 19 * 60).length
+          if (abends < posten.personen.min) {
+            warnungen.push({
+              typ: 'bedarf', schwere: 'gelb', tag,
+              text: `${TAG_NAMEN[tag]}: „${posten.name}" braucht abends ${posten.personen.min}${posten.personen.max > posten.personen.min ? '–' + posten.personen.max : ''} ${posten.personen.max > 1 ? 'Personen' : 'Person'}, nach 19:00 ${abends === 1 ? 'ist nur 1 eingeplant' : `sind nur ${abends} eingeplant`}`,
+            })
+          }
+        }
+
+        // Pflicht-Rolle: kein anwesender MA mit passender Quali/Funktion
+        if (posten.rolle && arbeiten.length > 0) {
+          const vorhanden = arbeiten.some(a => erfuelltRolle(a.ma, posten.rolle))
+          if (!vorhanden) {
+            warnungen.push({
+              typ: 'bedarf', schwere: 'gelb', tag,
+              text: `${TAG_NAMEN[tag]}: „${posten.name}" braucht Rolle ${ROLLE_LABELS[posten.rolle] || posten.rolle} – niemand mit passender Quali eingeplant`,
+            })
+          }
+        }
+      }
     }
   }
 
