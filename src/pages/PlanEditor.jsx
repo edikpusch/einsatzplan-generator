@@ -261,6 +261,16 @@ export default function PlanEditor() {
     if (filiale) saveWoche(woche)
   }, [woche, filiale])
 
+  // Querformat auf dem Handy: die Wochen-Matrix braucht die volle Breite.
+  // Best-effort – funktioniert nur, wenn die Umgebung das Sperren erlaubt
+  // (installierte PWA / Fullscreen auf Android). iOS Safari ignoriert das
+  // still; dort erscheint stattdessen der Dreh-Hinweis (siehe .quer-hinweis).
+  useEffect(() => {
+    const o = window.screen?.orientation
+    if (o?.lock) o.lock('landscape').catch(() => {})
+    return () => { if (o?.unlock) { try { o.unlock() } catch { /* egal */ } } }
+  }, [])
+
   const alleWochen = useMemo(() => ({
     ...getAlleWochen(),
     [wocheKey(filialeId, jahr, kw)]: woche,
@@ -387,6 +397,13 @@ export default function PlanEditor() {
       {mitarbeiter.length === 0 && (
         <div className="karte leer-hinweis">
           Diese Filiale hat noch keine Mitarbeiter.
+        </div>
+      )}
+
+      {tab === 'plan' && mitarbeiter.length > 0 && (
+        <div className="quer-hinweis">
+          <span style={{ fontSize: 20 }}>📱↻</span>
+          <span>Handy quer drehen – dann siehst du die ganze Woche auf einen Blick.</span>
         </div>
       )}
 

@@ -23,9 +23,14 @@ export default function FilialeList() {
         {filialen.map(f => (
           <Link key={f.id} className="listen-eintrag" to={`/filiale/${f.id}`}>
             <div className="haupt">
-              <div className="titel">{f.nummer || 'Neue Filiale'} {f.adresse ? `– ${f.adresse}` : ''}</div>
+              <div className="titel">
+                {f.nummer
+                  ? `${f.nummer}${f.adresse ? ` – ${f.adresse}` : ''}`
+                  : '⚠ Nummer/Adresse fehlt'}
+              </div>
               <div className="unter">
                 {getMitarbeiter(f.id).length} Mitarbeiter · Budget {String(f.wochenstundenBudget).replace('.', ',')} Std
+                {!f.nummer && ' · zum Ergänzen antippen'}
               </div>
             </div>
             <span className="pfeil">›</span>

@@ -325,6 +325,41 @@ table.abwesend .ma-spalte { text-align: left; font-weight: 600; font-size: 13px;
 
 .leer-hinweis { text-align: center; color: var(--text-schwach); padding: 24px 12px; font-size: 14px; }
 
+/* Dreh-Hinweis: nur auf Touch-Geräten im Hochformat (Handy) sichtbar */
+.quer-hinweis { display: none; }
+@media (orientation: portrait) and (max-width: 820px) and (pointer: coarse) {
+  .quer-hinweis {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--gelb-hell);
+    color: #6b5400;
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+}
+
+/* Handy im Querformat: Matrix kompakter, damit MA-Spalte + alle 6 Tage
+   ohne horizontales Scrollen sichtbar sind (voller Wochen-Überblick). */
+@media (orientation: landscape) and (max-height: 600px) {
+  .kopf { padding-top: calc(4px + env(safe-area-inset-top)); padding-bottom: 4px; }
+  .kopf h1 { font-size: 15px; }
+  .seite > .hinweis { display: none; }
+  .tabs { margin-bottom: 8px; }
+  .tabs button { padding: 6px 8px; font-size: 12px; }
+  table.plan { min-width: 100%; }
+  table.plan th, table.plan td { padding: 2px; font-size: 11px; }
+  table.plan .ma-spalte { min-width: 96px; max-width: 110px; }
+  .ma-name { font-size: 11px; }
+  .ma-info { font-size: 10px; }
+  .zelle-btn { min-height: 38px; font-size: 11px; }
+  .zelle-btn .std { font-size: 10px; }
+  .budget-leiste { padding-top: 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); font-size: 12px; }
+}
+
 /* Bedarf-Tab: Balken pro Tag (Bedarf vs. geplant vs. Budget-Anteil) */
 .bedarf-legende {
   display: flex;
