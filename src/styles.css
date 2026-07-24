@@ -344,6 +344,65 @@ table.abwesend .ma-spalte { text-align: left; font-weight: 600; font-size: 13px;
   font-weight: 700;
 }
 
+/* Tagesaufgaben */
+.abgleich-zeile {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.abgleich-zeile > div {
+  flex: 1;
+  background: #f0f3f1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.abgleich-zeile span {
+  display: block;
+  font-size: 11px;
+  color: var(--text-schwach);
+}
+.abgleich-zeile strong { font-size: 15px; }
+.soll-zeile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--grau-linie);
+  font-size: 13px;
+}
+.soll-zeile:last-child { border-bottom: none; }
+.soll-zeile b { flex: 0 0 28px; }
+.prio-kugel {
+  display: inline-block;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--gruen);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+.tages-feld {
+  width: 100%;
+  padding: 6px 2px !important;
+  text-align: center;
+  font-size: 13px !important;
+}
+.aufgaben-liste {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--grau-linie);
+}
+.aufgaben-liste div {
+  font-size: 12px;
+  color: var(--text-schwach);
+  padding: 1px 0;
+}
+
 /* Abwesenheits-Abfrage vor der Generierung */
 .abw-zeile {
   padding: 10px 0;

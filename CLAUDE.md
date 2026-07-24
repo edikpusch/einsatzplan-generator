@@ -166,7 +166,40 @@ Volle Spezifikation inkl. Phase B: [docs/PROMPT-PhaseA.md](docs/PROMPT-PhaseA.md
   baecker/kasse/schluesseltraeger-Quali, ml=Funktion enthält
   „Filialverantwortlicher", reinigung=Funktion Reinigungskraft).
 
-### Bedarfsmodul (utils/katalog.js + utils/bedarf.js + BedarfTab)
+### Tagesaufgaben – HERZSTÜCK der Planung (utils/aufgaben.js + utils/zuteilung.js)
+Volles Konzept: [docs/KONZEPT-Tagesaufgaben.md](docs/KONZEPT-Tagesaufgaben.md)
+- **Eine** Bedarfsquelle: Aufgaben mit STUNDEN pro Tag. Gleichzeitigkeit wird
+  abgeleitet, nie gepflegt. Kernformel (`tagesBloecke`):
+  `grundbesetzung = floor(stunden / oeffnungsDauer)`, Rest → Stoßzeiten.
+  20 h Kasse bei 15 h Öffnung = 1 durchgehend + 5 h zweite Kasse.
+- Drei Modi: `durchgehend` (Kasse), `fenster` (Bake-Off bis 10:00), `frei`
+  (Leergut). Mehr Fälle gibt es bewusst nicht.
+- `stosszeiten` (nur Zeitfenster, ohne Anzahl) ersetzt `kassenPeaks`;
+  `fruehesterBeginn` (06:00) ist eine harte Schranke – `arbeitsFenster`
+  beschneidet jede Öffnungszeit darauf.
+- Speicherorte: Filiale = Standard, Woche = Kopie beim ersten Öffnen
+  (`woche.tagesaufgaben`), Favoriten global in `ep_aufgaben_favoriten`.
+- Migration (`aufgabenAusKatalog`, lazy in `store.getFilialen`, wird EINMALIG
+  zurückgeschrieben – sonst bekämen die Aufgaben bei jedem Lesen neue IDs):
+  kassenStandard + Peaks → Aufgabe „Kasse", Katalog-Kategorien → je eine
+  Aufgabe, baeckerFenster → Fenster der Bake-Off-Aufgabe.
+- **Zuteilung (`zuteilung.js`) wird IMMER neu berechnet, nie gespeichert** –
+  so kann sie nie mit dem Plan auseinanderlaufen.
+  - `platziereePausen`: Schichtmitte, 15-min-Raster, Stoßzeiten meidend,
+    versetzt, nie in der ersten/letzten Stunde, deterministisch.
+  - `verteileAufgaben`: Tag in Abschnitte (Schicht-/Pausen-/Blockgrenzen),
+    je Abschnitt erst Vertretung (belegt NICHT), dann Pflicht-Plätze
+    „knappster zuerst", dann freie Aufgaben nach Aufgaben-Priorität.
+    Bei Doppelqualifikation gewinnt die eigene bessere Prio-Zahl.
+  - Verifiziert: Prio-1-Kasse in Pause → Prio 2 rückt nach; ist auch die weg,
+    übernimmt der Vertretungs-MA mit Kasse-Prio 3 genau für die Pausendauer.
+- Generator nutzt `tagesKurve`/`kopfBedarfZu` statt der alten Kassen-Rechnung,
+  füllt danach in Schritt 4b bis zu den Tages-Soll-Stunden auf; Schritt 5
+  (Vertragsstunden) entfällt bei `nurSollBedarf: true`.
+
+### Bedarfsmodul – nur noch Startwert-Lieferant (utils/katalog.js + utils/bedarf.js)
+- Steuert die Planung NICHT mehr – liefert nur noch die Startwerte für die
+  Tagesaufgaben (`aufgabenAusKatalog`) sowie Lieferungen/Inventuren der Woche.
 - KALKULATION, kein Task-Management – nichts wird „abgehakt".
 - Personenstunden = personen × dauerMin (Min/Max-Spannen mitführen).
 - Lieferung = 30 min Annahme + Paletten × palettenFaktor[art].

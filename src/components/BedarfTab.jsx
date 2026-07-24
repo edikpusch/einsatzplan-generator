@@ -1,45 +1,44 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { TAGE, TAG_KURZ, TAG_NAMEN, dauerHHMM } from '../utils/zeit'
+import { spanneText, lieferungenVorbelegen } from '../utils/bedarf'
+import { abgleich, sollMinutenTag, giltAm, stundenFuerTag } from '../utils/aufgaben'
 import {
-  wochenBedarf, budgetAmpel, stdText, spanneText, lieferungenVorbelegen,
-} from '../utils/bedarf'
-import {
-  effektiverKatalog, LIEFERARTEN, LIEFERART_LABELS, ROLLE_LABELS,
-  ZEITANKER_LABELS,
+  effektiverKatalog, LIEFERARTEN, LIEFERART_LABELS,
 } from '../utils/katalog'
 
 const AMPEL_FARBEN = { gruen: '#1f6f43', gelb: '#b98d00', rot: '#d3392f', grau: '#667085' }
 const AMPEL_TEXTE = {
-  gruen: 'Budget reicht für den Bedarf',
+  gruen: 'Budget reicht für die Aufgaben',
   gelb: 'Knapp: weniger als 5 % Luft im Budget',
-  rot: 'Bedarf übersteigt das Wochenbudget',
+  rot: 'Aufgaben übersteigen das Wochenbudget',
   grau: 'Kein Budget hinterlegt',
 }
 
-function ankerText(anker) {
-  if (!anker) return 'tagsüber'
-  return ZEITANKER_LABELS[anker] || anker
-}
-
 // Bedarf-Tab im Plan-Editor: Kalkulation, kein Task-Management.
-export default function BedarfTab({ woche, setWoche, filiale, katalog, geplantProTag }) {
+export default function BedarfTab({
+  woche, setWoche, filiale, katalog, geplantProTag, mitarbeiter, zuteilung,
+}) {
   const [offenerTag, setOffenerTag] = useState(null)
 
-  const bedarf = useMemo(
-    () => wochenBedarf({ filiale, katalog, woche }),
-    [filiale, katalog, woche])
+  // Bedarf kommt jetzt aus den Tagesaufgaben (Wochen-Kopie hat Vorrang)
+  const aufgaben = woche.tagesaufgaben || filiale.tagesaufgaben || []
+  const check = useMemo(
+    () => abgleich({ aufgaben, filiale, mitarbeiter: mitarbeiter || [] }),
+    [aufgaben, filiale, mitarbeiter])
 
-  const budgetMin = Math.round((Number(filiale.wochenstundenBudget) || 0) * 60)
-  const ampel = budgetAmpel(bedarf, budgetMin)
+  const sollProTag = useMemo(() => Object.fromEntries(
+    TAGE.map(tag => [tag, sollMinutenTag({ aufgaben, filiale, tag })])),
+    [aufgaben, filiale])
+
+  const budgetMin = check.budgetMin
   const geplantGesamt = TAGE.reduce((s, t) => s + (geplantProTag[t] || 0), 0)
+  const ampelFarbe = budgetMin <= 0 ? 'grau'
+    : check.sollMin > budgetMin ? 'rot'
+      : budgetMin - check.sollMin < 0.05 * budgetMin ? 'gelb' : 'gruen'
 
-  const offeneTage = TAGE.filter(t => filiale.oeffnungszeiten?.[t]?.offen)
-  const budgetProTag = offeneTage.length > 0 ? budgetMin / offeneTage.length : 0
   const skalenMax = Math.max(
-    budgetProTag,
-    ...TAGE.map(t => Math.max(bedarf.tage[t].maxMin, geplantProTag[t] || 0)),
-    1)
+    ...TAGE.map(t => Math.max(sollProTag[t] || 0, geplantProTag[t] || 0)), 1)
 
   // Inventuren/Saison: alle Kandidaten aus dem Katalog
   const zusatzKandidaten = effektiverKatalog(katalog, filiale).filter(v =>
@@ -68,55 +67,59 @@ export default function BedarfTab({ woche, setWoche, filiale, katalog, geplantPr
 
   return (
     <>
-      {/* Wochen-Summe vs. Budget (Ampel) */}
+      {/* Drei-Wege-Abgleich */}
       <div className="karte">
-        <h2>Wochenbedarf vs. Budget</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <h2>Aufgaben ↔ Budget ↔ Vertragsstunden</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <span style={{
             width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
-            background: AMPEL_FARBEN[ampel.farbe],
+            background: AMPEL_FARBEN[ampelFarbe],
           }} />
           <div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>
-              Bedarf ca. {spanneText(bedarf.minMin, bedarf.maxMin)}
+              Aufgaben brauchen {dauerHHMM(check.sollMin)}
             </div>
             <div className="hinweis" style={{ margin: 0 }}>
-              Budget {dauerHHMM(budgetMin)} Std · geplant {dauerHHMM(geplantGesamt)} · {AMPEL_TEXTE[ampel.farbe]}
+              Budget {dauerHHMM(budgetMin)} · geplant {dauerHHMM(geplantGesamt)} · {AMPEL_TEXTE[ampelFarbe]}
             </div>
           </div>
         </div>
-        {(bedarf.externMaxMin > 0) && (
-          <p className="hinweis">
-            + extern (zählt nicht gegen das Budget): {spanneText(bedarf.externMinMin, bedarf.externMaxMin)}
-          </p>
-        )}
+        <div className="abgleich-zeile">
+          <div><span>Aufgaben</span><strong>{dauerHHMM(check.sollMin)}</strong></div>
+          <div><span>Budget</span><strong>{dauerHHMM(check.budgetMin)}</strong></div>
+          <div><span>Vertragsstunden</span><strong>{dauerHHMM(check.vertragMin)}</strong></div>
+        </div>
+        {check.hinweise.map((h, i) => (
+          <div key={i} className={`warnung ${h.schwere}`}>
+            <span className="punkt">{h.schwere === 'rot' ? '🔴' : '🟡'}</span>
+            <span>{h.text}</span>
+          </div>
+        ))}
+        <p className="hinweis">
+          Aufgaben und Stunden pflegst du in den{' '}
+          <Link to={`/filiale/${filiale.id}/aufgaben`}>Tagesaufgaben der Filiale</Link>.
+        </p>
       </div>
 
-      {/* Balken pro Tag: Bedarf vs. geplant vs. Budget-Anteil */}
+      {/* Balken pro Tag: Soll vs. geplant */}
       <div className="karte">
-        <h2>Bedarf pro Tag</h2>
+        <h2>Soll und geplant pro Tag</h2>
         <div className="bedarf-legende">
-          <span><i style={{ background: '#4272b8' }} /> Bedarf (Mittel)</span>
+          <span><i style={{ background: '#4272b8' }} /> Soll (Aufgaben)</span>
           <span><i style={{ background: 'var(--gruen)' }} /> Geplant</span>
-          <span><i className="strich" /> Budget-Anteil/Tag</span>
         </div>
         {TAGE.map(tag => {
-          const t = bedarf.tage[tag]
-          const mittel = (t.minMin + t.maxMin) / 2
+          const soll = sollProTag[tag] || 0
           const geplant = geplantProTag[tag] || 0
           const offen = filiale.oeffnungszeiten?.[tag]?.offen
-          const markerPos = budgetProTag > 0 ? Math.min(100, (budgetProTag / skalenMax) * 100) : null
           return (
             <div key={tag} className="bedarf-zeile"
               onClick={() => setOffenerTag(offenerTag === tag ? null : tag)}>
               <div className="bedarf-tag">{TAG_KURZ[tag]}</div>
               <div className="bedarf-balken">
-                {markerPos != null && offen && (
-                  <span className="bedarf-marker" style={{ left: `${markerPos}%` }} />
-                )}
                 <div className="balkenreihe">
-                  <div className="balken bedarf" style={{ width: `${(mittel / skalenMax) * 100}%` }} />
-                  <span className="balken-wert">{offen ? spanneText(t.minMin, t.maxMin) : 'geschlossen'}</span>
+                  <div className="balken bedarf" style={{ width: `${(soll / skalenMax) * 100}%` }} />
+                  <span className="balken-wert">{offen ? dauerHHMM(soll) : 'geschlossen'}</span>
                 </div>
                 <div className="balkenreihe">
                   <div className="balken geplant" style={{ width: `${(geplant / skalenMax) * 100}%` }} />
@@ -127,37 +130,36 @@ export default function BedarfTab({ woche, setWoche, filiale, katalog, geplantPr
             </div>
           )
         })}
-        {bedarf.flexPosten.length > 0 && (
-          <p className="hinweis">
-            + frei planbar diese Woche: {bedarf.flexPosten.map(p =>
-              `${p.name} (${spanneText(p.minMin, p.maxMin)})`).join(' · ')}
-          </p>
-        )}
       </div>
 
-      {/* Tagesansicht für den ML */}
+      {/* Tagesansicht: Aufgaben mit Soll und tatsächlich verteilt */}
       {offenerTag && (
         <div className="karte">
-          <h2>{TAG_NAMEN[offenerTag]} – Vorgänge</h2>
-          {bedarf.tage[offenerTag].posten.length === 0 && (
-            <div className="leer-hinweis">Keine Vorgänge an diesem Tag.</div>
+          <h2>{TAG_NAMEN[offenerTag]} – Aufgaben</h2>
+          {aufgaben.filter(a => giltAm(a, offenerTag)).length === 0 && (
+            <div className="leer-hinweis">Keine Aufgaben an diesem Tag.</div>
           )}
-          {bedarf.tage[offenerTag].posten.map((p, i) => (
-            <div key={i} className="listen-eintrag" style={{ padding: '8px 0' }}>
-              <div className="haupt">
-                <div style={{ fontSize: 14 }}>
-                  <b>{ankerText(p.zeitanker)}</b> · {p.name}
-                </div>
-                <div className="unter">
-                  {p.personen ? `${p.personen.min}${p.personen.max > p.personen.min ? '–' + p.personen.max : ''} P · ` : ''}
-                  ≈ {spanneText(p.minMin, p.maxMin)}
-                  {p.rolle ? ` · Rolle: ${ROLLE_LABELS[p.rolle] || p.rolle}` : ''}
-                  {p.extern ? ' · ' : ''}
-                  {p.extern && <span className="badge blau">extern</span>}
+          {aufgaben.filter(a => giltAm(a, offenerTag)).map(a => {
+            const soll = Math.round(stundenFuerTag(a, offenerTag) * 60)
+            const erledigt = zuteilung?.[offenerTag]?.jeAufgabe?.[a.id]?.erledigtMin ?? 0
+            const offen = soll - erledigt
+            return (
+              <div key={a.id} className="listen-eintrag" style={{ padding: '8px 0' }}>
+                <div className="haupt">
+                  <div style={{ fontSize: 14 }}>
+                    <span className="prio-kugel">{a.prioritaet ?? 3}</span> {a.name}
+                  </div>
+                  <div className="unter">
+                    Soll {dauerHHMM(soll)} · verteilt {dauerHHMM(erledigt)}
+                    {offen > 15 && <span className="badge rot" style={{ marginLeft: 6 }}>
+                      {dauerHHMM(offen)} offen
+                    </span>}
+                    {a.budgetQuelle === 'extern' && <span className="badge blau" style={{ marginLeft: 6 }}>extern</span>}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           {(filiale.bestellzeiten || []).length > 0 && (
             <>
               <h3>Bestell-Deadlines</h3>

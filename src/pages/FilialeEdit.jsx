@@ -121,7 +121,27 @@ export default function FilialeEdit() {
       </div>
 
       <div className="karte">
-        <h2>Besetzungsregeln</h2>
+        <h2>Tagesaufgaben (Herzstück der Planung)</h2>
+        <p className="hinweis">
+          Der Bedarf jedes Tages steckt in den Aufgaben-Stunden. Wie viele
+          Personen gleichzeitig nötig sind, rechnet die App daraus aus.
+        </p>
+        <div className="listen-eintrag" style={{ cursor: 'pointer' }}
+          onClick={() => navigate(`/filiale/${filiale.id}/aufgaben`)}>
+          <div className="haupt">
+            <div className="titel">{(filiale.tagesaufgaben || []).length} Aufgaben · {(filiale.stosszeiten || []).length} Stoßzeiten</div>
+            <div className="unter">Stunden, Prioritäten, Zeitfenster und Favoriten pflegen</div>
+          </div>
+          <span className="pfeil">›</span>
+        </div>
+      </div>
+
+      <div className="karte">
+        <h2>Besetzungsregeln (alt)</h2>
+        <p className="hinweis">
+          Diese Werte wurden bereits in Tagesaufgaben übersetzt und steuern die
+          Planung nicht mehr – sie bleiben nur als Referenz sichtbar.
+        </p>
         <div className="zeile">
           <label className="feld">
             <span>Bäcker morgens bis</span>

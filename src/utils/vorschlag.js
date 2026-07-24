@@ -16,6 +16,9 @@ import {
 } from './zeit'
 import { schichtVerdienst, gfbMonatsWerte } from './gfb'
 import { kannBereich, bereichsPrio, istPlanbar } from './rollen'
+import {
+  tagesKurve, kopfBedarfZu, sollMinutenTag, arbeitsFenster,
+} from './aufgaben'
 
 // Reinigungskräfte plant die Engine nicht ein (kein Verkaufs-Personal);
 // ihre manuell geplanten Schichten zählen aber weiter zum Budget.
@@ -51,29 +54,20 @@ function tagesVorlagen(filiale, auf, zu) {
   ]
 }
 
-// Kopfbedarf zum Zeitpunkt t: Grundbesetzung max(1, kassenStandard),
-// während Peaks max(…, peak.anzahl), plus Sondertag-Zusatzköpfe.
-function kopfBedarf(t, tag, filiale, zusatz) {
-  let bedarf = Math.max(1, Number(filiale.kassenStandard) || 0)
-  for (const p of filiale.kassenPeaks || []) {
-    if (!p.tage?.includes(tag)) continue
-    const pv = toMin(p.von), pb = toMin(p.bis)
-    if (pv != null && pb != null && t >= pv && t < pb) {
-      bedarf = Math.max(bedarf, Number(p.anzahl) || 0)
-    }
-  }
-  return bedarf + zusatz
+// Kopfbedarf zum Zeitpunkt t – kommt jetzt aus der Soll-Kurve der
+// Tagesaufgaben (siehe utils/aufgaben.js), plus Sondertag-Zusatzköpfe.
+function kopfBedarf(t, kurve, zusatz) {
+  return Math.max(1, kopfBedarfZu(kurve, t)) + zusatz
 }
 
 // Größte Unterdeckung (Köpfe) innerhalb eines Fensters – Sweep über
-// Ereignispunkte (Fenstergrenzen, Peak-Grenzen, Intervallgrenzen).
-function maxDefizit({ wVon, wBis, tag, filiale, zusatz, intervalle }) {
+// Ereignispunkte (Fenstergrenzen, Kurvenstufen, Intervallgrenzen).
+function maxDefizit({ wVon, wBis, kurve, zusatz, intervalle }) {
   if (wBis <= wVon) return 0
   const punkte = new Set([wVon, wBis])
-  for (const p of filiale.kassenPeaks || []) {
-    if (!p.tage?.includes(tag)) continue
-    for (const x of [toMin(p.von), toMin(p.bis)]) {
-      if (x != null && x > wVon && x < wBis) punkte.add(x)
+  for (const a of kurve) {
+    for (const x of [a.von, a.bis]) {
+      if (x > wVon && x < wBis) punkte.add(x)
     }
   }
   for (const iv of intervalle) {
@@ -85,7 +79,7 @@ function maxDefizit({ wVon, wBis, tag, filiale, zusatz, intervalle }) {
   for (let i = 0; i < sortiert.length - 1; i++) {
     const t = (sortiert[i] + sortiert[i + 1]) / 2
     const deckung = intervalle.filter(iv => iv.von < t && iv.bis > t).length
-    max = Math.max(max, kopfBedarf(t, tag, filiale, zusatz) - deckung)
+    max = Math.max(max, kopfBedarf(t, kurve, zusatz) - deckung)
   }
   return max
 }
@@ -102,12 +96,18 @@ function zuschlagMinuten(von, bis, zuschlaege) {
   return min
 }
 
-export function erzeugeVorschlag({ woche, filiale, mitarbeiter, profile, alleWochen }) {
+export function erzeugeVorschlag({
+  woche, filiale, mitarbeiter, profile, alleWochen, nurSollBedarf = false,
+}) {
   const konflikte = []
   const neue = [] // { maId, tag, von, bis }
   const plan = JSON.parse(JSON.stringify(woche.plan || {}))
   const pool = mitarbeiter.filter(planbar)
   const budgetMin = Math.round((Number(filiale.wochenstundenBudget) || 0) * 60)
+  // Tagesaufgaben: Wochen-Kopie hat Vorrang vor dem Filial-Standard
+  const aufgaben = woche.tagesaufgaben || filiale.tagesaufgaben || []
+  const kurven = Object.fromEntries(
+    TAGE.map(tag => [tag, tagesKurve({ aufgaben, filiale, tag })]))
 
   // Ausgangslage: verplante Minuten (ALLE MA zählen zum Budget)
   let usedMin = 0
@@ -331,10 +331,10 @@ export function erzeugeVorschlag({ woche, filiale, mitarbeiter, profile, alleWoc
 
   // ---------- Schritt 1–4: Tages-Slots erzeugen und greedy besetzen ----------
   for (const [tagIdx, tag] of TAGE.entries()) {
-    const oz = filiale.oeffnungszeiten?.[tag]
-    if (!oz?.offen) continue
-    const auf = toMin(oz.auf), zu = toMin(oz.zu)
-    if (auf == null || zu == null || zu <= auf) continue
+    const fenster = arbeitsFenster(filiale, tag)
+    if (!fenster) continue
+    const { auf, zu } = fenster // nie vor dem frühesten Arbeitsbeginn
+    const kurve = kurven[tag]
     const vorlagen = tagesVorlagen(filiale, auf, zu)
     const zusatz = (woche.sondertage || [])
       .filter(s => s.tag === tag)
@@ -349,7 +349,7 @@ export function erzeugeVorschlag({ woche, filiale, mitarbeiter, profile, alleWoc
       let schutz = 30
       while (schutz-- > 0) {
         const defizit = maxDefizit({
-          wVon, wBis, tag, filiale, zusatz, intervalle: intervalleAm(tag),
+          wVon, wBis, kurve, zusatz, intervalle: intervalleAm(tag),
         })
         if (defizit <= 0) break
 
@@ -394,8 +394,48 @@ export function erzeugeVorschlag({ woche, filiale, mitarbeiter, profile, alleWoc
     }
   }
 
+  // ---------- Schritt 4b: Tage auf ihre Soll-Stunden auffüllen ----------
+  // Die Soll-Kurve deckt nur die zeitgebundenen Aufgaben ab. Freie Aufgaben
+  // (Leergut, Frische packen …) brauchen zusätzlich Stunden – dafür wird
+  // weiteres Personal eingeplant, bis das Tages-Soll erreicht ist.
+  for (const [tagIdx, tag] of TAGE.entries()) {
+    const fenster = arbeitsFenster(filiale, tag)
+    if (!fenster) continue
+    const sollMin = sollMinutenTag({ aufgaben, filiale, tag })
+    if (sollMin <= 0) continue
+
+    let schutz = 12
+    while (schutz-- > 0) {
+      const geplant = pool.reduce((s, ma) => {
+        const z = plan[ma.id]?.[tag]
+        return s + (z?.art === 'arbeit' ? (z.stdMin || 0) : 0)
+      }, 0)
+      if (geplant >= sollMin) break
+
+      const vorlagen = tagesVorlagen(filiale, fenster.auf, fenster.zu)
+      const rollen = rollenStatus(tag, fenster.auf, fenster.zu, fenster.auf)
+      let bester = null, besteVor = null, besteStufe = Infinity, besterScore = Infinity
+      for (const vor of vorlagen) {
+        const brutto = vor.bis - vor.von
+        const netto = brutto - autoPause(brutto)
+        for (const ma of pool) {
+          if (!kannArbeiten(ma, tagIdx, vor.von, vor.bis, netto)) continue
+          const st = stufe(ma, rollen)
+          const s = score(ma, tagIdx, vor.von, vor.bis, rollen)
+          if (st < besteStufe || (st === besteStufe && s < besterScore)) {
+            besteStufe = st; besterScore = s; bester = ma; besteVor = vor
+          }
+        }
+      }
+      if (!bester) break
+      zuweisen(bester, tagIdx, besteVor.von, besteVor.bis,
+        rollen.fehltVertreter && kannBereich(bester, 'vertreter'))
+    }
+  }
+
   // ---------- Schritt 5: Feste bis Vertragsstunden auffüllen ----------
-  const feste = pool
+  // Entfällt, wenn der Nutzer "nur Soll-Bedarf planen" gewählt hat.
+  const feste = nurSollBedarf ? [] : pool
     .filter(m => m.typ === 'fest')
     .sort((a, b) =>
       ((vertragMin[b.id] || 0) - maMin[b.id]) - ((vertragMin[a.id] || 0) - maMin[a.id]))

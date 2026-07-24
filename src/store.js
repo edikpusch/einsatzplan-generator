@@ -4,12 +4,14 @@ import {
   STANDARD_KATALOG, defaultLieferprofil, defaultPalettenFaktoren,
 } from './utils/katalog'
 import { leerePrioritaeten } from './utils/rollen'
+import { aufgabenAusKatalog, stosszeitenAusPeaks } from './utils/aufgaben'
 
 const KEY_PROFILE = 'ep_profile'
 const KEY_FILIALEN = 'ep_filialen'
 const KEY_MITARBEITER = 'ep_mitarbeiter'
 const KEY_WOCHEN = 'ep_wochen'
 const KEY_KATALOG = 'ep_vorgangskatalog'
+const KEY_FAVORITEN = 'ep_aufgaben_favoriten'
 
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
@@ -84,19 +86,37 @@ export function defaultFiliale() {
   }
 }
 
-// Migration: ältere Filialen um Bedarfsmodul-Felder ergänzen (lazy)
+// Migration: ältere Filialen um Bedarfsmodul- und Aufgaben-Felder ergänzen
 function mitFilialDefaults(f) {
-  return {
+  const basis = {
     lieferprofil: defaultLieferprofil(),
     palettenFaktoren: defaultPalettenFaktoren(),
     bestellzeiten: [],
     vorgangOverrides: {},
+    fruehesterBeginn: '06:00',
     ...f,
   }
+  // Alte kassenPeaks → Stoßzeiten (nur Zeitfenster, Anzahl ergibt sich
+  // künftig aus den Aufgaben-Stunden)
+  if (!basis.stosszeiten) basis.stosszeiten = stosszeitenAusPeaks(basis)
+  // Startsatz Tagesaufgaben aus Vorgangskatalog + alten Kassen-Feldern
+  if (!basis.tagesaufgaben) {
+    basis.tagesaufgaben = aufgabenAusKatalog(basis, getKatalog(), uid)
+  }
+  return basis
 }
 
 export function getFilialen() {
-  return lade(KEY_FILIALEN, []).map(mitFilialDefaults)
+  const roh = lade(KEY_FILIALEN, [])
+  let migriert = false
+  const erg = roh.map(f => {
+    if (!f.tagesaufgaben || !f.stosszeiten) migriert = true
+    return mitFilialDefaults(f)
+  })
+  // Einmalig zurückschreiben – sonst bekämen die Aufgaben bei jedem Lesen
+  // neue IDs (React-Keys, Zuteilung, Favoriten würden brechen).
+  if (migriert && erg.length > 0) speichere(KEY_FILIALEN, erg)
+  return erg
 }
 
 export function getFiliale(id) {
@@ -250,4 +270,24 @@ export function getKatalog() {
 
 export function saveKatalog(katalog) {
   speichere(KEY_KATALOG, katalog)
+}
+
+// ---------- Aufgaben-Favoriten (filialübergreifend) ----------
+
+export function getFavoriten() {
+  return lade(KEY_FAVORITEN, [])
+}
+
+export function saveFavorit(name, aufgaben) {
+  const alle = getFavoriten()
+  const eintrag = { id: uid(), name, aufgaben: JSON.parse(JSON.stringify(aufgaben)) }
+  const idx = alle.findIndex(f => f.name === name)
+  if (idx >= 0) alle[idx] = { ...eintrag, id: alle[idx].id }
+  else alle.push(eintrag)
+  speichere(KEY_FAVORITEN, alle)
+  return eintrag
+}
+
+export function deleteFavorit(id) {
+  speichere(KEY_FAVORITEN, getFavoriten().filter(f => f.id !== id))
 }

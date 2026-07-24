@@ -6,6 +6,7 @@ import FilialeEdit from './pages/FilialeEdit'
 import MitarbeiterEdit from './pages/MitarbeiterEdit'
 import OcrScan from './pages/OcrScan'
 import KatalogEdit from './pages/KatalogEdit'
+import AufgabenEdit from './pages/AufgabenEdit'
 import WocheStart from './pages/WocheStart'
 import PlanEditor from './pages/PlanEditor'
 
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/filiale/:filialeId/ma/:maId" element={<MitarbeiterEdit />} />
         <Route path="/filiale/:id/scan" element={<OcrScan />} />
         <Route path="/filiale/:id/katalog" element={<KatalogEdit />} />
+        <Route path="/filiale/:id/aufgaben" element={<AufgabenEdit />} />
         <Route path="/woche" element={<WocheStart />} />
         <Route path="/plan/:filialeId/:jahr/:kw" element={<PlanEditor />} />
       </Routes>

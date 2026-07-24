@@ -8,9 +8,10 @@ import {
 import BedarfTab from '../components/BedarfTab'
 import { lieferungenVorbelegen, faelligeInventuren } from '../utils/bedarf'
 import { istPlanbar, kannBereich } from '../utils/rollen'
+import { verteileWoche } from '../utils/zuteilung'
 import {
   TAGE, TAG_KURZ, TAG_NAMEN, STATUS_CODES, STATUS_LABELS,
-  toMin, autoPause, berechneStdMin, dauerHHMM, dezimalZuHHMM, euroFormat,
+  toMin, toHHMM, autoPause, berechneStdMin, dauerHHMM, dezimalZuHHMM, euroFormat,
   tagDatum, datumKurz, monatName,
 } from '../utils/zeit'
 import { pruefeWoche } from '../utils/pruefung'
@@ -53,7 +54,7 @@ function sortiere(mitarbeiter) {
 
 // ---------- Bottom-Sheet für eine Zelle ----------
 
-function ZellenSheet({ ma, tag, datum, zelle, filiale, onSetzen, onSchliessen }) {
+function ZellenSheet({ ma, tag, datum, zelle, filiale, aufgabenBloecke, pauseFenster, onSetzen, onSchliessen }) {
   const [von, setVon] = useState(zelle?.art === 'arbeit' ? zelle.von : '')
   const [bis, setBis] = useState(zelle?.art === 'arbeit' ? zelle.bis : '')
   const [pause, setPause] = useState(zelle?.art === 'arbeit' ? String(zelle.pauseMin) : '')
@@ -84,6 +85,18 @@ function ZellenSheet({ ma, tag, datum, zelle, filiale, onSetzen, onSchliessen })
       <div className="sheet" onClick={e => e.stopPropagation()}>
         <h2>{ma.vorname} {ma.name}</h2>
         <div className="unter">{TAG_NAMEN[tag]}, {datumKurz(datum)}</div>
+
+        {aufgabenBloecke?.length > 0 && (
+          <div className="aufgaben-liste">
+            <div style={{ fontWeight: 600, color: 'var(--text)' }}>Aufgaben an diesem Tag</div>
+            {aufgabenBloecke.map((b, i) => (
+              <div key={i}>{toHHMM(b.von)}–{toHHMM(b.bis)} · {b.name}</div>
+            ))}
+            {pauseFenster && (
+              <div>{toHHMM(pauseFenster.von)}–{toHHMM(pauseFenster.bis)} · Pause</div>
+            )}
+          </div>
+        )}
 
         <h3 style={{ margin: '10px 0 6px', fontSize: 13, color: 'var(--text-schwach)' }}>Schichtvorlagen</h3>
         <div className="vorlagen-grid">
@@ -165,7 +178,10 @@ function ZellenSheet({ ma, tag, datum, zelle, filiale, onSetzen, onSchliessen })
 // dieselben Zellen wie der Abwesend-Tab (plan + abwesenheiten), also keine
 // Doppelpflege. Der Generator plant diese Tage dann nicht ein.
 
-function AbwesenheitsSheet({ mitarbeiter, woche, jahr, kw, onSetzen, onWeiter, onSchliessen }) {
+function AbwesenheitsSheet({
+  mitarbeiter, woche, jahr, kw, vertragVorrang, setVertragVorrang,
+  onSetzen, onWeiter, onSchliessen,
+}) {
   function statusVon(maId, tag) {
     const z = woche.plan?.[maId]?.[tag]
     if (z?.art === 'status') return z.code
@@ -237,6 +253,17 @@ function AbwesenheitsSheet({ mitarbeiter, woche, jahr, kw, onSetzen, onWeiter, o
           {anzahl === 0
             ? 'Aktuell ist niemand als abwesend markiert.'
             : `${anzahl} Mitarbeiter mit Abwesenheit markiert.`}
+        </p>
+
+        <label className="check">
+          <input type="checkbox" checked={vertragVorrang}
+            onChange={e => setVertragVorrang(e.target.checked)} />
+          Vertragsstunden voll verplanen
+        </label>
+        <p className="hinweis" style={{ marginTop: 0 }}>
+          {vertragVorrang
+            ? 'Feste werden bis zu ihren Vertragsstunden eingeplant, auch wenn der Aufgaben-Bedarf schon gedeckt ist.'
+            : 'Es wird nur so viel geplant, wie die Tagesaufgaben fordern – nicht erreichte Vertragsstunden werden gemeldet.'}
         </p>
 
         <div className="fab-zeile">
@@ -341,6 +368,11 @@ export default function PlanEditor() {
     // Bedarfsmodul-Migration: Lieferungen + fällige Inventuren vorbelegen
     if (!w.lieferungen) w.lieferungen = filiale ? lieferungenVorbelegen(filiale) : []
     if (!w.inventurenDiesenMonat) w.inventurenDiesenMonat = faelligeInventuren(jahr, kw, getKatalog())
+    // Tagesaufgaben beim ersten Öffnen aus dem Filial-Standard kopieren –
+    // spätere Änderungen am Standard verändern geplante Wochen nicht mehr.
+    if (!w.tagesaufgaben && filiale) {
+      w.tagesaufgaben = JSON.parse(JSON.stringify(filiale.tagesaufgaben || []))
+    }
     return w
   })
   const [tab, setTab] = useState('plan')
@@ -348,6 +380,7 @@ export default function PlanEditor() {
   const [exportiert, setExportiert] = useState(false)
   const [vorschlag, setVorschlag] = useState(null) // Ergebnis der Auto-Engine
   const [abwesenheitsAbfrage, setAbwesenheitsAbfrage] = useState(false)
+  const [vertragVorrang, setVertragVorrang] = useState(true)
 
   // Auto-Save: jede Änderung sofort in localStorage (kein Datenverlust auf Mobil)
   useEffect(() => {
@@ -374,6 +407,12 @@ export default function PlanEditor() {
     [woche, filiale, mitarbeiter, profile, alleWochen, katalog])
 
   const monate = useMemo(() => wochenMonate(jahr, kw), [jahr, kw])
+
+  // Aufgaben-Zuteilung: wird IMMER neu berechnet, nie gespeichert
+  const aufgaben = woche.tagesaufgaben || filiale?.tagesaufgaben || []
+  const zuteilung = useMemo(() => filiale
+    ? verteileWoche({ filiale, aufgaben, mitarbeiter, plan: woche.plan })
+    : {}, [filiale, aufgaben, mitarbeiter, woche.plan])
 
   if (!filiale) {
     return (
@@ -418,7 +457,10 @@ export default function PlanEditor() {
 
   function generieren() {
     setAbwesenheitsAbfrage(false)
-    setVorschlag(erzeugeVorschlag({ woche, filiale, mitarbeiter, profile, alleWochen }))
+    setVorschlag(erzeugeVorschlag({
+      woche, filiale, mitarbeiter, profile, alleWochen,
+      nurSollBedarf: !vertragVorrang,
+    }))
   }
 
   function vorschlagUebernehmen() {
@@ -458,12 +500,18 @@ export default function PlanEditor() {
   const restMin = budgetMin - gesamtMin
   const prozent = budgetMin > 0 ? Math.min(100, (gesamtMin / budgetMin) * 100) : 0
 
-  const zellWarnungen = new Set(
-    warnungen.filter(w => w.maId && w.tag).map(w => `${w.maId}_${w.tag}`))
-  const tagWarnungen = new Set(
-    warnungen.filter(w => w.tag && !w.maId).map(w => w.tag))
+  // Meldungen der Aufgaben-Zuteilung (unbesetzte Plätze, offene Stunden)
+  const alleWarnungen = [
+    ...warnungen,
+    ...TAGE.flatMap(tag => zuteilung[tag]?.meldungen || []),
+  ]
 
-  const roteAnzahl = warnungen.filter(w => w.schwere === 'rot').length
+  const zellWarnungen = new Set(
+    alleWarnungen.filter(w => w.maId && w.tag).map(w => `${w.maId}_${w.tag}`))
+  const tagWarnungen = new Set(
+    alleWarnungen.filter(w => w.tag && !w.maId).map(w => w.tag))
+
+  const roteAnzahl = alleWarnungen.filter(w => w.schwere === 'rot').length
 
   return (
     <div className="seite">
@@ -489,7 +537,7 @@ export default function PlanEditor() {
           Sondertage{woche.sondertage.length > 0 && <span className="zahl">{woche.sondertage.length}</span>}
         </button>
         <button className={tab === 'pruefung' ? 'aktiv' : ''} onClick={() => setTab('pruefung')}>
-          Prüfung{warnungen.length > 0 && <span className="zahl">{warnungen.length}</span>}
+          Prüfung{alleWarnungen.length > 0 && <span className="zahl">{alleWarnungen.length}</span>}
         </button>
       </div>
 
@@ -588,6 +636,8 @@ export default function PlanEditor() {
           filiale={filiale}
           katalog={katalog}
           geplantProTag={geplantProTag}
+          mitarbeiter={mitarbeiter}
+          zuteilung={zuteilung}
         />
       )}
 
@@ -683,17 +733,17 @@ export default function PlanEditor() {
 
       {tab === 'pruefung' && (
         <div className="karte">
-          <h2>Prüfung ({warnungen.length})</h2>
-          {warnungen.length === 0 && (
+          <h2>Prüfung ({alleWarnungen.length})</h2>
+          {alleWarnungen.length === 0 && (
             <div className="leer-hinweis">✅ Keine Warnungen – Plan sieht gut aus.</div>
           )}
-          {warnungen.map((w, idx) => (
+          {alleWarnungen.map((w, idx) => (
             <div key={idx} className={`warnung ${w.schwere}`}>
               <span className="punkt">{w.schwere === 'rot' ? '🔴' : '🟡'}</span>
               <span>{w.text}</span>
             </div>
           ))}
-          {warnungen.length > 0 && (
+          {alleWarnungen.length > 0 && (
             <p className="hinweis">Warnungen sind Hinweise, kein Zwang – du entscheidest.</p>
           )}
         </div>
@@ -731,6 +781,8 @@ export default function PlanEditor() {
           woche={woche}
           jahr={jahr}
           kw={kw}
+          vertragVorrang={vertragVorrang}
+          setVertragVorrang={setVertragVorrang}
           onSetzen={setzeZelle}
           onWeiter={generieren}
           onSchliessen={() => setAbwesenheitsAbfrage(false)}
@@ -753,6 +805,8 @@ export default function PlanEditor() {
           datum={tagDatum(jahr, kw, TAGE.indexOf(auswahl.tag))}
           zelle={woche.plan?.[auswahl.maId]?.[auswahl.tag] || null}
           filiale={filiale}
+          aufgabenBloecke={zuteilung[auswahl.tag]?.jeMitarbeiter?.[auswahl.maId] || []}
+          pauseFenster={zuteilung[auswahl.tag]?.pausen?.[auswahl.maId] || null}
           onSetzen={zelle => setzeZelle(auswahl.maId, auswahl.tag, zelle)}
           onSchliessen={() => setAuswahl(null)}
         />
