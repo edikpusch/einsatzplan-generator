@@ -7,13 +7,14 @@ import { gfbMonatsWerte, wochenMonate } from './gfb'
 import { monatName } from './zeit'
 import { tagesBedarf, stdText } from './bedarf'
 import { ROLLE_LABELS } from './katalog'
+import { kannBereich, ROLLE_ZU_BEREICH } from './rollen'
 
-// Erfüllt dieser MA die Pflicht-Rolle eines Vorgangs?
+// Erfüllt dieser MA die Pflicht-Rolle eines Vorgangs? Bereichs-Rollen laufen
+// über die Prioritätslisten (utils/rollen.js), ML/Reinigung über die Funktion.
 function erfuelltRolle(ma, rolle) {
+  const bereich = ROLLE_ZU_BEREICH[rolle]
+  if (bereich) return kannBereich(ma, bereich)
   switch (rolle) {
-    case 'baecker': return !!ma.quali?.baecker
-    case 'kassierer': return !!ma.quali?.kasse
-    case 'schluesseltraeger': return !!ma.quali?.schluesseltraeger
     case 'ml': return (ma.funktion || '').includes('Filialverantwortlicher')
     case 'reinigung': return ma.funktion === 'Reinigungskraft Lebensmittel'
     default: return true
@@ -104,10 +105,10 @@ export function pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen, 
         })
       }
       for (const v of vertreter) {
-        if (!v.ma.quali?.schluesseltraeger) {
+        if (!kannBereich(v.ma, 'vertreter')) {
           warnungen.push({
             typ: 'vertreter', schwere: 'rot', tag, maId: v.ma.id,
-            text: `${tagName}: Vertreter ${maName(v.ma)} ist nicht als Schlüsselträger qualifiziert`,
+            text: `${tagName}: Vertreter ${maName(v.ma)} hat keine Vertreter-Priorität hinterlegt`,
           })
         }
       }
@@ -146,18 +147,18 @@ export function pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen, 
       // 3. Bäcker-Fenster morgens
       const baeckerBis = toMin(filiale.baeckerFenster?.bis)
       if (baeckerBis != null && baeckerBis > auf && arbeiten.length > 0) {
-        const baecker = arbeiten.filter(a => a.ma.quali?.baecker)
+        const baecker = arbeiten.filter(a => kannBereich(a.ma, 'bakeoff'))
         const luecken = unterdeckung(auf, Math.min(baeckerBis, zu), baecker, 1)
         if (luecken.length > 0) {
           warnungen.push({
             typ: 'baecker', schwere: 'rot', tag,
-            text: `${tagName}: kein Bäcker eingeplant (${lueckenText(luecken)})`,
+            text: `${tagName}: niemand für Bake-Off eingeplant (${lueckenText(luecken)})`,
           })
         }
       }
 
       // 4. Kassen-Besetzung (Standard + Peaks)
-      const kassen = arbeiten.filter(a => a.ma.quali?.kasse)
+      const kassen = arbeiten.filter(a => kannBereich(a.ma, 'kasse'))
       if (arbeiten.length > 0) {
         const standard = Number(filiale.kassenStandard) || 0
         if (standard > 0) {
@@ -304,6 +305,15 @@ export function pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen, 
         warnungen.push({
           typ: 'bedarf', schwere: 'gelb', tag,
           text: `${TAG_NAMEN[tag]}: Lieferung, aber Unterdeckung ca. ${stdText(bedarf.minMin - geplantMin)} (Bedarf ≥ ${stdText(bedarf.minMin)}, geplant ${stdText(geplantMin)})`,
+        })
+      }
+
+      // Liefertag ohne jemanden mit Packen-Priorität
+      if (hatLieferung && arbeiten.length > 0 &&
+        !arbeiten.some(a => kannBereich(a.ma, 'packen'))) {
+        warnungen.push({
+          typ: 'bedarf', schwere: 'gelb', tag,
+          text: `${TAG_NAMEN[tag]}: Liefertag, aber niemand mit Packen-Priorität eingeplant`,
         })
       }
 

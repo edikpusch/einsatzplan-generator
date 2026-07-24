@@ -7,6 +7,7 @@ import {
 } from '../store'
 import BedarfTab from '../components/BedarfTab'
 import { lieferungenVorbelegen, faelligeInventuren } from '../utils/bedarf'
+import { istPlanbar, kannBereich } from '../utils/rollen'
 import {
   TAGE, TAG_KURZ, TAG_NAMEN, STATUS_CODES, STATUS_LABELS,
   toMin, autoPause, berechneStdMin, dauerHHMM, dezimalZuHHMM, euroFormat,
@@ -120,10 +121,10 @@ function ZellenSheet({ ma, tag, datum, zelle, filiale, onSetzen, onSchliessen })
 
         <label className="check">
           <input type="checkbox" checked={vertreter}
-            disabled={!ma.quali?.schluesseltraeger}
+            disabled={!kannBereich(ma, 'vertreter')}
             onChange={e => setVertreter(e.target.checked)} />
           Vertreter (V) – Marktverantwortliche/r der Schicht
-          {!ma.quali?.schluesseltraeger && <span className="badge rot">kein Schlüsselträger</span>}
+          {!kannBereich(ma, 'vertreter') && <span className="badge rot">keine Vertreter-Prio</span>}
         </label>
 
         <button className="btn voll" disabled={!zeitOk} onClick={flexibelAnwenden}
@@ -153,6 +154,94 @@ function ZellenSheet({ ma, tag, datum, zelle, filiale, onSetzen, onSchliessen })
             </button>
           )}
           <button className="btn zweit" onClick={onSchliessen}>Abbrechen</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------- Abwesenheits-Abfrage VOR der Generierung ----------
+// Schnellauswahl: Wer ist diese Woche im Urlaub oder krank? Schreibt in
+// dieselben Zellen wie der Abwesend-Tab (plan + abwesenheiten), also keine
+// Doppelpflege. Der Generator plant diese Tage dann nicht ein.
+
+function AbwesenheitsSheet({ mitarbeiter, woche, jahr, kw, onSetzen, onWeiter, onSchliessen }) {
+  function statusVon(maId, tag) {
+    const z = woche.plan?.[maId]?.[tag]
+    if (z?.art === 'status') return z.code
+    if (z?.art === 'arbeit') return 'A'
+    return null
+  }
+
+  // Tippen schaltet weiter: frei → U (Urlaub) → K (krank) → frei
+  function weiterschalten(maId, tag) {
+    const jetzt = statusVon(maId, tag)
+    if (jetzt === 'U') onSetzen(maId, tag, { art: 'status', code: 'K' })
+    else if (jetzt === 'K') onSetzen(maId, tag, null)
+    else onSetzen(maId, tag, { art: 'status', code: 'U' })
+  }
+
+  function ganzeWoche(maId, code) {
+    for (const tag of TAGE) onSetzen(maId, tag, { art: 'status', code })
+  }
+
+  function wocheLeeren(maId) {
+    for (const tag of TAGE) {
+      if (woche.plan?.[maId]?.[tag]?.art === 'status') onSetzen(maId, tag, null)
+    }
+  }
+
+  const anzahl = mitarbeiter.filter(ma =>
+    TAGE.some(tag => ['U', 'K'].includes(statusVon(ma.id, tag)))).length
+
+  return (
+    <div className="sheet-hintergrund" onClick={onSchliessen}>
+      <div className="sheet" onClick={e => e.stopPropagation()}>
+        <h2>Wer fehlt diese Woche?</h2>
+        <div className="unter">
+          KW {kw}/{jahr} · Tag antippen schaltet weiter: frei → <b>U</b> Urlaub →
+          <b> K</b> krank → frei. Der Vorschlag plant diese Tage nicht ein.
+        </div>
+
+        <div style={{ maxHeight: '52vh', overflowY: 'auto', margin: '10px 0' }}>
+          {mitarbeiter.map(ma => (
+            <div key={ma.id} className="abw-zeile">
+              <div className="abw-kopf">
+                <span className="name">{ma.vorname} {ma.name}</span>
+                <button className="btn klein zweit" onClick={() => ganzeWoche(ma.id, 'U')}>
+                  U Woche
+                </button>
+                <button className="btn klein zweit" onClick={() => ganzeWoche(ma.id, 'K')}>
+                  K Woche
+                </button>
+                <button className="btn klein zweit" onClick={() => wocheLeeren(ma.id)}>✕</button>
+              </div>
+              <div className="abw-tage">
+                {TAGE.map(tag => {
+                  const s = statusVon(ma.id, tag)
+                  const klasse = s === 'U' ? 'u' : s === 'K' ? 'k' : s === 'A' ? 'arbeit' : ''
+                  return (
+                    <button key={tag} className={`abw-tag ${klasse}`}
+                      onClick={() => weiterschalten(ma.id, tag)}>
+                      <span className="wt">{TAG_KURZ[tag]}</span>
+                      {s || '–'}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="hinweis">
+          {anzahl === 0
+            ? 'Aktuell ist niemand als abwesend markiert.'
+            : `${anzahl} Mitarbeiter mit Abwesenheit markiert.`}
+        </p>
+
+        <div className="fab-zeile">
+          <button className="btn zweit" onClick={onSchliessen}>Abbrechen</button>
+          <button className="btn" onClick={onWeiter}>Weiter → Plan erzeugen</button>
         </div>
       </div>
     </div>
@@ -241,7 +330,10 @@ export default function PlanEditor() {
 
   const filiale = useMemo(() => getFiliale(filialeId), [filialeId])
   const profile = useMemo(() => getProfile(), [])
-  const mitarbeiter = useMemo(() => sortiere(getMitarbeiter(filialeId)), [filialeId])
+  // Dauerhaft Abwesende (Elternzeit, Langzeitkrank …) tauchen weder im
+  // Raster noch in Prüfung, Generierung oder Export auf.
+  const mitarbeiter = useMemo(
+    () => sortiere(getMitarbeiter(filialeId).filter(istPlanbar)), [filialeId])
   const katalog = useMemo(() => getKatalog(), [])
 
   const [woche, setWoche] = useState(() => {
@@ -255,6 +347,7 @@ export default function PlanEditor() {
   const [auswahl, setAuswahl] = useState(null) // { maId, tag }
   const [exportiert, setExportiert] = useState(false)
   const [vorschlag, setVorschlag] = useState(null) // Ergebnis der Auto-Engine
+  const [abwesenheitsAbfrage, setAbwesenheitsAbfrage] = useState(false)
 
   // Auto-Save: jede Änderung sofort in localStorage (kein Datenverlust auf Mobil)
   useEffect(() => {
@@ -318,7 +411,13 @@ export default function PlanEditor() {
     }))
   }
 
+  // Vor dem Generieren erst die Urlaub/Krank-Abfrage, dann rechnen.
   function autoVorschlag() {
+    setAbwesenheitsAbfrage(true)
+  }
+
+  function generieren() {
+    setAbwesenheitsAbfrage(false)
     setVorschlag(erzeugeVorschlag({ woche, filiale, mitarbeiter, profile, alleWochen }))
   }
 
@@ -625,6 +724,18 @@ export default function PlanEditor() {
             : `+${dauerHHMM(-restMin)} über Budget!`}
         </span>
       </div>
+
+      {abwesenheitsAbfrage && (
+        <AbwesenheitsSheet
+          mitarbeiter={mitarbeiter}
+          woche={woche}
+          jahr={jahr}
+          kw={kw}
+          onSetzen={setzeZelle}
+          onWeiter={generieren}
+          onSchliessen={() => setAbwesenheitsAbfrage(false)}
+        />
+      )}
 
       {vorschlag && (
         <VorschlagSheet

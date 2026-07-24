@@ -25,10 +25,11 @@ export const RHYTHMUS_LABELS = {
 }
 
 export const ROLLE_LABELS = {
-  baecker: 'Bäcker',
+  baecker: 'Bake-Off',
   ml: 'ML',
   kassierer: 'Kasse',
-  schluesseltraeger: 'Schlüsselträger',
+  schluesseltraeger: 'Vertreter',
+  packen: 'Packen',
   reinigung: 'Reinigungskraft',
 }
 

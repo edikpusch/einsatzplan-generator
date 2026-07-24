@@ -67,8 +67,9 @@ src/
   schichtvorlagen[] }
 - `ep_mitarbeiter` – Array (MA an Filiale gebunden): { id, filialeId, name,
   vorname, funktion, typ fest|gfb, vertragsstunden, stundenlohn,
-  verdienstgrenze, quali{schluesseltraeger,baecker,kasse}, verfuegbarkeit,
-  azubi, berufsschultage[] }
+  verdienstgrenze, prioritaeten{vertreter,bakeoff,kasse,packen},
+  dauerhaftAbwesend, abwesenheitsGrund, verfuegbarkeit, azubi,
+  berufsschultage[] }
 - `ep_wochen` – Objekt, Key `${filialeId}_${jahr}_KW${kw}`: { filialeId, jahr,
   kw, datumVon, datumBis, abwesenheiten{maId→tag→code}, sondertage[],
   plan{maId→tag→Zelle} }
@@ -103,6 +104,19 @@ Volle Spezifikation inkl. Phase B: [docs/PROMPT-PhaseA.md](docs/PROMPT-PhaseA.md
 - Auto-Save via useEffect auf `woche` – die Woche entsteht beim ersten Öffnen.
 - `alleWochen` für GfB-Monatswarnung enthält die aktuelle (ungespeicherte)
   Woche explizit gemerged – sonst hinkt die Warnung einen Render hinterher.
+
+### Bereiche & Prioritäten (utils/rollen.js) – ersetzt die Quali-Häkchen
+- Pro MA `prioritaeten: { vertreter, bakeoff, kasse, packen }`. Zahl = macht
+  den Bereich, **1 = erste Wahl**; null/leer = macht ihn nicht. Dadurch rückt
+  bei Urlaub der Prio-1-Kraft automatisch Prio 2 nach (B/O = **Bake-Off**).
+- Migration in `store.mitMaDefaults`: altes `quali.schluesseltraeger/baecker/
+  kasse` → Prio 1 im jeweiligen Bereich, `packen` leer. Nie zurückschreiben
+  nötig – die Migration läuft lazy bei jedem `getAlleMitarbeiter()`.
+- `kannBereich(ma, bereich)` ersetzt überall die alten Häkchen-Abfragen
+  (pruefung.js, vorschlag.js, PlanEditor V-Checkbox).
+- `dauerhaftAbwesend` (+ `abwesenheitsGrund`): MA bleibt gespeichert, wird
+  aber via `istPlanbar` aus Raster, Prüfung, Generierung und Export gefiltert
+  (Filter sitzt im PlanEditor-Memo, der Export erbt die gefilterte Liste).
 
 ### GfB-Logik (utils/gfb.js)
 - Zuschläge zählen NUR für die Verdienstgrenze (€), das Filialbudget bleibt
@@ -172,14 +186,31 @@ Volle Spezifikation inkl. Phase B: [docs/PROMPT-PhaseA.md](docs/PROMPT-PhaseA.md
   Plans, Vorschau-Sheet (neue Schichten pro Tag + Konfliktliste), erst
   „Übernehmen" schreibt in `woche.plan`. Bestehende Zellen (Arbeit UND
   Status) werden NIE verändert oder überschrieben.
+- **Vor dem Rechnen** öffnet der PlanEditor die Abwesenheits-Abfrage
+  (`AbwesenheitsSheet`): Tag antippen schaltet frei → U → K → frei, plus
+  „U/K Woche". Schreibt über `setzeZelle` in plan + abwesenheiten (keine
+  Doppelpflege zum Abwesend-Tab).
 - Greedy: Slots aus Schichtvorlagen (ohne Vorlagen: 2 synthetische Schichten
   mit 15 min Übergabe) × Kopfbedarf-Sweep (max(1, kassenStandard), Peaks als
   Maximum, Sondertag-Zusatzköpfe additiv). Danach Feste bis Vertragsstunden
   auffüllen (dünnste Fenster zuerst).
-- Score: Feste mit größtem Vertrags-Defizit zuerst; GfB = Puffer (+5000),
+- **Einsatz-Stufen (harte Reihenfolge, `stufe()`):** 0 = Feste mit freien
+  Vertragsstunden, 1 = GfB als Puffer, 2 = Feste in Überstunden. Erst wenn
+  keine Stufe-0-Kraft kann, wird überhaupt Stufe 1/2 gezogen. Ausnahme: fehlt
+  Vertreter oder Bake-Off und der MA kann die Rolle, steigt er eine Stufe auf
+  (sonst bliebe eine Schicht ohne Schlüsselträger, nur um Überstunden zu
+  sparen). Verifiziert: nie Überstunden, solange jemand Vertragsstunden frei
+  hat; Überstunden-Spanne bei 8 gleichen Verträgen nur ~1 h.
+- Score innerhalb der Stufe: Feste nach größtem Vertrags-Defizit; in Stufe 2
+  nach den WENIGSTEN bisherigen Überstunden (gerechte Verteilung); GfB nach
   Zuschlagsminuten ×3 (spät sparsam), über Verdienstgrenze +1.000.000 (nur
-  letzte Option, dann roter Konflikt). Fehlende Pflichtrollen geben Bonus
-  (V −3000, Bäcker −2500, Kasse −1500).
+  letzte Option, dann roter Konflikt). Pflichtrollen geben Bonus, nach Prio
+  gestaffelt (`prioBonus`: Basis − (prio−1)×200; V 3000, Bake-Off 2500,
+  Packen 2000, Kasse 1500).
+- **Schritt 6 – V nach Priorität:** Nach dem Füllen bekommt in jedem
+  Schicht-Fenster der anwesende MA mit der besten `vertreter`-Prio das V.
+  Nur Engine-Zellen werden angefasst; ein manuell gesetztes V im Fenster
+  blockiert den Pass komplett.
 - Harte Filter: Zelle belegt, Verfügbarkeit, Azubi (Berufsschultag, >8h netto,
   Ende nach 20:00), Ruhezeit 11h zu Vor- UND Folgetag, Budget (hart).
 - Reinigungskräfte plant die Engine nicht (zählen aber zum Budget).

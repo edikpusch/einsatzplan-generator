@@ -3,6 +3,7 @@ import { ALLE_TAGE, TAGE } from './utils/zeit'
 import {
   STANDARD_KATALOG, defaultLieferprofil, defaultPalettenFaktoren,
 } from './utils/katalog'
+import { leerePrioritaeten } from './utils/rollen'
 
 const KEY_PROFILE = 'ep_profile'
 const KEY_FILIALEN = 'ep_filialen'
@@ -141,15 +142,37 @@ export function defaultMitarbeiter(filialeId, profile) {
     vertragsstunden: 37.5,
     stundenlohn: profile?.mindestlohn ?? 13.90,
     verdienstgrenze: profile?.minijobGrenze ?? 603,
-    quali: { schluesseltraeger: false, baecker: false, kasse: false },
+    prioritaeten: leerePrioritaeten(),
+    dauerhaftAbwesend: false,
+    abwesenheitsGrund: '',
     verfuegbarkeit: verf,
     azubi: false,
     berufsschultage: [],
   }
 }
 
+// Migration: alte Quali-Häkchen → Bereichs-Prioritäten (alle als Prio 1,
+// also gleichwertig wie vorher – die Reihenfolge pflegt der Nutzer danach).
+function mitMaDefaults(m) {
+  if (m.prioritaeten) {
+    return { dauerhaftAbwesend: false, abwesenheitsGrund: '', ...m }
+  }
+  const q = m.quali || {}
+  return {
+    dauerhaftAbwesend: false,
+    abwesenheitsGrund: '',
+    ...m,
+    prioritaeten: {
+      vertreter: q.schluesseltraeger ? 1 : null,
+      bakeoff: q.baecker ? 1 : null,
+      kasse: q.kasse ? 1 : null,
+      packen: null,
+    },
+  }
+}
+
 export function getAlleMitarbeiter() {
-  return lade(KEY_MITARBEITER, [])
+  return lade(KEY_MITARBEITER, []).map(mitMaDefaults)
 }
 
 export function getMitarbeiter(filialeId) {

@@ -7,6 +7,7 @@ import {
   deleteMitarbeiter, FUNKTIONEN,
 } from '../store'
 import { TAGE, TAG_NAMEN, dezimalZuHHMM } from '../utils/zeit'
+import { BEREICHE, BEREICH_LABELS, BEREICH_INFO } from '../utils/rollen'
 
 export default function MitarbeiterEdit() {
   const { filialeId, maId } = useParams()
@@ -114,23 +115,56 @@ export default function MitarbeiterEdit() {
       </div>
 
       <div className="karte">
-        <h2>Qualifikationen</h2>
+        <h2>Bereiche &amp; Priorität</h2>
+        <p className="hinweis">
+          Zahl eintragen = macht diesen Bereich. <b>1 = erste Wahl</b>, 2 = Vertretung,
+          3 = danach … Leer lassen = macht den Bereich nicht.
+          Ist die Prio 1 im Urlaub, rückt beim Generieren automatisch Prio 2 nach.
+        </p>
+        {BEREICHE.map(bereich => (
+          <div key={bereich} className="prio-zeile">
+            <div className="prio-text">
+              <div className="prio-name">{BEREICH_LABELS[bereich]}</div>
+              <div className="prio-info">{BEREICH_INFO[bereich]}</div>
+            </div>
+            <input
+              type="number" min="1" max="99" inputMode="numeric"
+              className="prio-feld"
+              placeholder="–"
+              value={ma.prioritaeten?.[bereich] ?? ''}
+              onChange={e => update({
+                prioritaeten: {
+                  ...(ma.prioritaeten || {}),
+                  [bereich]: e.target.value === '' ? null : parseInt(e.target.value) || null,
+                },
+              })}
+            />
+          </div>
+        ))}
+        <p className="hinweis">Eine Person darf mehrere Bereiche gleichzeitig abdecken.</p>
+      </div>
+
+      <div className="karte">
+        <h2>Dauerhaft abwesend</h2>
         <label className="check">
-          <input type="checkbox" checked={!!ma.quali?.schluesseltraeger}
-            onChange={e => update({ quali: { ...ma.quali, schluesseltraeger: e.target.checked } })} />
-          Schlüsselträger (kann Vertreter „V" sein)
+          <input type="checkbox" checked={!!ma.dauerhaftAbwesend}
+            onChange={e => update({ dauerhaftAbwesend: e.target.checked })} />
+          Nicht einplanen (Elternzeit, Langzeitkrank, ausgeschieden …)
         </label>
-        <label className="check">
-          <input type="checkbox" checked={!!ma.quali?.baecker}
-            onChange={e => update({ quali: { ...ma.quali, baecker: e.target.checked } })} />
-          Bäcker
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={!!ma.quali?.kasse}
-            onChange={e => update({ quali: { ...ma.quali, kasse: e.target.checked } })} />
-          Kasse
-        </label>
-        <p className="hinweis">Eine Person darf mehrere Rollen gleichzeitig erfüllen.</p>
+        {ma.dauerhaftAbwesend && (
+          <>
+            <label className="feld" style={{ marginTop: 8 }}>
+              <span>Grund (optional)</span>
+              <input type="text" value={ma.abwesenheitsGrund || ''}
+                placeholder="z. B. Elternzeit bis 03/2027"
+                onChange={e => update({ abwesenheitsGrund: e.target.value })} />
+            </label>
+            <p className="hinweis">
+              Erscheint nicht mehr im Wochenplan, in der Generierung und im Export –
+              die Daten bleiben aber erhalten und der Haken ist jederzeit lösbar.
+            </p>
+          </>
+        )}
       </div>
 
       <div className="karte">

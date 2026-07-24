@@ -7,6 +7,7 @@ import {
 } from '../store'
 import { ALLE_TAGE, TAG_NAMEN, dezimalZuHHMM } from '../utils/zeit'
 import { LIEFERARTEN, LIEFERART_LABELS } from '../utils/katalog'
+import { BEREICHE, BEREICH_KURZ, kannBereich, bereichsPrio } from '../utils/rollen'
 
 export default function FilialeEdit() {
   const { id } = useParams()
@@ -71,12 +72,12 @@ export default function FilialeEdit() {
           <label className="feld" style={{ maxWidth: 120 }}>
             <span>Nummer</span>
             <input type="text" inputMode="numeric" value={filiale.nummer}
-              onChange={e => update({ nummer: e.target.value })} placeholder="2497" />
+              onChange={e => update({ nummer: e.target.value })} placeholder="z. B. 2497" />
           </label>
           <label className="feld">
             <span>Adresse</span>
             <input type="text" value={filiale.adresse}
-              onChange={e => update({ adresse: e.target.value })} placeholder="Brake-Bahnhofstr. 79 a" />
+              onChange={e => update({ adresse: e.target.value })} placeholder="z. B. Brake-Bahnhofstr. 79 a" />
           </label>
         </div>
         <div className="zeile">
@@ -282,9 +283,12 @@ export default function FilialeEdit() {
                 {ma.funktion} · {ma.typ === 'gfb' ? 'GfB' : `${dezimalZuHHMM(ma.vertragsstunden)} Std`}
               </div>
               <div style={{ marginTop: 3 }}>
-                {ma.quali?.schluesseltraeger && <span className="badge blau">Schlüssel</span>}
-                {ma.quali?.baecker && <span className="badge gelb">Bäcker</span>}
-                {ma.quali?.kasse && <span className="badge gruen">Kasse</span>}
+                {ma.dauerhaftAbwesend && <span className="badge rot">dauerhaft abwesend</span>}
+                {BEREICHE.filter(b => kannBereich(ma, b)).map(b => (
+                  <span key={b} className="badge blau">
+                    {BEREICH_KURZ[b]} {bereichsPrio(ma, b)}
+                  </span>
+                ))}
                 {ma.azubi && <span className="badge">Azubi</span>}
                 {istAushilfe(ma) && <span className="badge">Aushilfe</span>}
               </div>
