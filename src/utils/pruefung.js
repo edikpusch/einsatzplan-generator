@@ -111,11 +111,12 @@ export function pruefeWoche({ woche, filiale, mitarbeiter, profile, alleWochen, 
           })
         }
       }
-      // Mehr als ein Vertreter gleichzeitig (pro Schicht genau einer)
+      // Mehr als ein Vertreter gleichzeitig (pro Schicht genau einer).
+      // Bis 30 min Überlappung = Schicht-Übergabe (Früh-V an Spät-V), ok.
       for (let i = 0; i < vertreter.length; i++) {
         for (let j = i + 1; j < vertreter.length; j++) {
           const a = vertreter[i], b = vertreter[j]
-          if (a.von < b.bis && b.von < a.bis) {
+          if (Math.min(a.bis, b.bis) - Math.max(a.von, b.von) > 30) {
             warnungen.push({
               typ: 'vertreter', schwere: 'gelb', tag,
               text: `${tagName}: mehrere Vertreter gleichzeitig (${maName(a.ma)}, ${maName(b.ma)})`,

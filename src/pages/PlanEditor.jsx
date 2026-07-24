@@ -13,6 +13,7 @@ import {
   tagDatum, datumKurz, monatName,
 } from '../utils/zeit'
 import { pruefeWoche } from '../utils/pruefung'
+import { erzeugeVorschlag } from '../utils/vorschlag'
 import { gfbMonatsWerte, wochenMonate } from '../utils/gfb'
 import { erstellePepXlsx, pepDateiname, teileOderLadeDatei } from '../utils/exportXlsx'
 
@@ -158,6 +159,78 @@ function ZellenSheet({ ma, tag, datum, zelle, filiale, onSetzen, onSchliessen })
   )
 }
 
+// ---------- Vorschau des Auto-Vorschlags (Phase B) ----------
+
+function VorschlagSheet({ vorschlag, mitarbeiter, onUebernehmen, onSchliessen }) {
+  const maById = Object.fromEntries(mitarbeiter.map(m => [m.id, m]))
+  const proTag = TAGE
+    .map(tag => ({
+      tag,
+      eintraege: vorschlag.neue.filter(n => n.tag === tag),
+    }))
+    .filter(x => x.eintraege.length > 0)
+
+  return (
+    <div className="sheet-hintergrund" onClick={onSchliessen}>
+      <div className="sheet" onClick={e => e.stopPropagation()}>
+        <h2>⚡ Auto-Vorschlag</h2>
+        <div className="unter">
+          {vorschlag.neue.length > 0
+            ? `${vorschlag.neue.length} Schicht${vorschlag.neue.length > 1 ? 'en' : ''} vorgeschlagen · bestehende Einträge bleiben unverändert`
+            : 'Keine neuen Schichten nötig – der Plan deckt den Bedarf bereits ab.'}
+        </div>
+
+        {proTag.length > 0 && (
+          <div style={{ maxHeight: '38vh', overflowY: 'auto', margin: '10px 0' }}>
+            {proTag.map(({ tag, eintraege }) => (
+              <div key={tag} style={{ marginBottom: 8 }}>
+                <strong style={{ fontSize: 13 }}>{TAG_NAMEN[tag]}</strong>
+                {eintraege.map((n, i) => {
+                  const ma = maById[n.maId]
+                  return (
+                    <div key={i} className="hinweis" style={{ margin: '2px 0 0 8px' }}>
+                      {ma ? `${ma.vorname} ${ma.name}` : '?'} · {n.von}–{n.bis}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {vorschlag.konflikte.length > 0 && (
+          <>
+            <h3 style={{ margin: '10px 0 6px', fontSize: 13, color: 'var(--text-schwach)' }}>
+              Nicht lösbar ({vorschlag.konflikte.length})
+            </h3>
+            <div style={{ maxHeight: '24vh', overflowY: 'auto' }}>
+              {vorschlag.konflikte.map((k, i) => (
+                <div key={i} className={`warnung ${k.schwere}`}>
+                  <span className="punkt">{k.schwere === 'rot' ? '🔴' : '🟡'}</span>
+                  <span>{k.text}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        <p className="hinweis">
+          Der Vorschlag ist ein Entwurf – nach dem Übernehmen kannst du jede
+          Zelle wie gewohnt anpassen.
+        </p>
+
+        <div className="fab-zeile">
+          <button className="btn voll" disabled={vorschlag.neue.length === 0}
+            onClick={onUebernehmen}>
+            Übernehmen
+          </button>
+          <button className="btn zweit" onClick={onSchliessen}>Verwerfen</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ---------- Hauptseite ----------
 
 export default function PlanEditor() {
@@ -181,6 +254,7 @@ export default function PlanEditor() {
   const [tab, setTab] = useState('plan')
   const [auswahl, setAuswahl] = useState(null) // { maId, tag }
   const [exportiert, setExportiert] = useState(false)
+  const [vorschlag, setVorschlag] = useState(null) // Ergebnis der Auto-Engine
 
   // Auto-Save: jede Änderung sofort in localStorage (kein Datenverlust auf Mobil)
   useEffect(() => {
@@ -232,6 +306,16 @@ export default function PlanEditor() {
       ...w,
       sondertage: w.sondertage.map((s, i) => i === idx ? { ...s, ...aenderung } : s),
     }))
+  }
+
+  function autoVorschlag() {
+    setVorschlag(erzeugeVorschlag({ woche, filiale, mitarbeiter, profile, alleWochen }))
+  }
+
+  function vorschlagUebernehmen() {
+    const neuerPlan = vorschlag.plan
+    setWoche(w => ({ ...w, plan: neuerPlan }))
+    setVorschlag(null)
   }
 
   async function exportieren() {
@@ -501,6 +585,12 @@ export default function PlanEditor() {
 
       {tab === 'plan' && (
         <div className="fab-zeile">
+          {mitarbeiter.length > 0 && (
+            <button className="btn zweit" onClick={autoVorschlag}
+              title="Leere Zellen automatisch mit einem Vorschlag füllen">
+              ⚡ Auto-Vorschlag
+            </button>
+          )}
           <button className="btn voll" onClick={exportieren}>
             📤 PEP exportieren / teilen {roteAnzahl > 0 ? `(${roteAnzahl} rote Warnungen)` : ''}
           </button>
@@ -518,6 +608,15 @@ export default function PlanEditor() {
             : `+${dauerHHMM(-restMin)} über Budget!`}
         </span>
       </div>
+
+      {vorschlag && (
+        <VorschlagSheet
+          vorschlag={vorschlag}
+          mitarbeiter={mitarbeiter}
+          onUebernehmen={vorschlagUebernehmen}
+          onSchliessen={() => setVorschlag(null)}
+        />
+      )}
 
       {auswahl && (
         <ZellenSheet

@@ -1,7 +1,7 @@
 # EinsatzplanGenerator – Projektkontext für Claude Code
 
 ## Projekt-Übersicht
-React PWA für Verkaufsleiter (VL) zur Erstellung wöchentlicher **Personaleinsatzpläne (PEP)** pro Filiale.
+React PWA für Verkaufsleiter (VL) zur Erstellung wöchentlicher **Personaleinsatzpläne (PEP)** pro Filiale. Phase A + OCR-Import + Bedarfsmodul + Phase B (Auto-Vorschlag) sind gebaut.
 Modul 4 der VL-Tool-Suite (nach MehrstundenManager, InventurManager, FlopMelder).
 - **Repo:** edikpusch/einsatzplan-generator (privat)
 - **Stack:** React + Vite + ExcelJS + localStorage (kein Backend!)
@@ -53,6 +53,7 @@ src/
     zeit.js             ← Minuten-Arithmetik, HH:MM, ISO-KW, Pausen-Automatik
     gfb.js              ← Zuschlagsbänder, GfB-Verdienst, Monats-Aggregation
     pruefung.js         ← Prüf-Layer (alle Warnungen)
+    vorschlag.js        ← Phase B: Auto-Vorschlags-Engine (greedy)
     exportXlsx.js       ← PEP-Export (ExcelJS) + Web-Share/Download
   store.js              ← localStorage-Zugriff (Prefix ep_)
   App.jsx               ← Router (HashRouter)
@@ -166,9 +167,28 @@ Volle Spezifikation inkl. Phase B: [docs/PROMPT-PhaseA.md](docs/PROMPT-PhaseA.md
 - Ampel: Mittelwert der Spanne vs. Budget (rot >100 %, gelb <5 % Luft).
 - Balken-Farben validiert (CVD-safe): Bedarf #4272b8, Geplant var(--gruen).
 
-### Phase B (NICHT gebaut, Datenmodell ist vorbereitet)
-Auto-Vorschlags-Engine (greedy + Prüf-Layer), schreibt in denselben `plan`.
-Spezifikation in docs/PROMPT-PhaseA.md, Abschnitt "Phase B".
+### Phase B – Auto-Vorschlags-Engine (utils/vorschlag.js + PlanEditor)
+- Button „⚡ Auto-Vorschlag" im Plan-Tab → Engine rechnet auf einer KOPIE des
+  Plans, Vorschau-Sheet (neue Schichten pro Tag + Konfliktliste), erst
+  „Übernehmen" schreibt in `woche.plan`. Bestehende Zellen (Arbeit UND
+  Status) werden NIE verändert oder überschrieben.
+- Greedy: Slots aus Schichtvorlagen (ohne Vorlagen: 2 synthetische Schichten
+  mit 15 min Übergabe) × Kopfbedarf-Sweep (max(1, kassenStandard), Peaks als
+  Maximum, Sondertag-Zusatzköpfe additiv). Danach Feste bis Vertragsstunden
+  auffüllen (dünnste Fenster zuerst).
+- Score: Feste mit größtem Vertrags-Defizit zuerst; GfB = Puffer (+5000),
+  Zuschlagsminuten ×3 (spät sparsam), über Verdienstgrenze +1.000.000 (nur
+  letzte Option, dann roter Konflikt). Fehlende Pflichtrollen geben Bonus
+  (V −3000, Bäcker −2500, Kasse −1500).
+- Harte Filter: Zelle belegt, Verfügbarkeit, Azubi (Berufsschultag, >8h netto,
+  Ende nach 20:00), Ruhezeit 11h zu Vor- UND Folgetag, Budget (hart).
+- Reinigungskräfte plant die Engine nicht (zählen aber zum Budget).
+- Vertreter-Check pro Fenster über die FENSTER-MITTE (sonst „blendet" der
+  Früh-V mit 15-min-Übergabe den V-Check der Spätschicht). Passend dazu
+  toleriert pruefung.js bis 30 min V-Überlappung (Übergabe).
+- Konflikte (`{schwere, text}`): unbesetzte Schichten, fehlender V/Bäcker,
+  Budget < Summe Vertragsstunden, GfB über Grenze, Vertragsstunden nicht
+  erreicht (nur wenn der MA überhaupt einen freien offenen Tag hatte).
 
 ## Häufige Fehler & Fixes (aus den Schwester-Modulen)
 

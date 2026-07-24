@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Kopf from '../components/Kopf'
 import { getFilialen, getAlleWochen } from '../store'
 import { isoKW, isoWochenMontag, tagDatum, datumKurz } from '../utils/zeit'
@@ -29,11 +29,23 @@ export default function WocheStart() {
         <label className="feld">
           <span>Filiale</span>
           <select value={filialeId} onChange={e => setFilialeId(e.target.value)}>
-            {filialen.map(f => (
-              <option key={f.id} value={f.id}>{f.nummer} – {f.adresse}</option>
-            ))}
+            {filialen.map((f, i) => {
+              const label = [f.nummer, f.adresse].filter(Boolean).join(' – ')
+              return (
+                <option key={f.id} value={f.id}>
+                  {label || `⚠ Filiale ${i + 1} (Nummer/Adresse fehlt)`}
+                </option>
+              )
+            })}
           </select>
         </label>
+        {filialeId && !filialen.find(f => f.id === filialeId)?.nummer && (
+          <p className="hinweis" style={{ color: 'var(--rot)' }}>
+            Diese Filiale hat noch keine Nummer/Adresse. In den{' '}
+            <Link to={`/filiale/${filialeId}`}>Filial-Stammdaten</Link> ergänzen –
+            sie wird sonst auch im Export nicht sauber benannt.
+          </p>
+        )}
         <div className="zeile">
           <label className="feld">
             <span>KW</span>
